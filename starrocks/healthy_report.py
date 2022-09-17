@@ -128,11 +128,11 @@ class BaseCheck(object):
             if count != db_nums:
                 print("In progress............{}/{}".format(count, db_nums))
             for table in db_tables[db]:
-                table_info = self.get_table_info(db, table, replica)
                 if table in self.table_black_list:
                     continue
                 if not table:
                     continue
+                table_info = self.get_table_info(db, table, replica)
                 if not table_info["replica_counts"]:
                     continue
                 table_schema = self.get_table_schema(db, table)[-1]
