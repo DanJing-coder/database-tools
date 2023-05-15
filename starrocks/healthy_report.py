@@ -63,10 +63,19 @@ class BaseCheck(object):
         sql = "SHOW PROC '/dbs';"
         dbs_sets = self.db.query(sql)[1]
         if len(dbs):
-            dbs_sets_valid = [(db[0], db[1].split(':')[1]) for db in dbs_sets
-                              if db[1].split(':')[1] in dbs]
+            for db in dbs_sets:
+                if ':' in db[1] and db[1].split(':')[1] in dbs:
+                    dbs_sets_valid.append((db[0], db[1].split(':')[1]))
+                    continue
+                if ':' not in db[1] and db[1] in dbs:
+                    dbs_sets_valid.append((db[0], db[1]))
+                    continue
         else:
-            dbs_sets_valid = [(db[0], db[1].split(':')[1]) for db in dbs_sets]
+            for db in dbs_sets:
+                if ':' in db[1]:
+                    dbs_sets_valid.append((db[0], db[1].split(':')[1]))
+                else:
+                    dbs_sets_valid.append((db[0], db[1]))
         return dbs_sets_valid
 
     def get_db_tables(self, databases):
