@@ -87,7 +87,7 @@ test() {
     echo $be_ssh_port $be_port
     exit 1
 }
-test
+# test
 
 
 # 定义日志的临时存储目录

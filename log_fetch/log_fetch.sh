@@ -56,7 +56,7 @@ test() {
     echo $user $password $port
     exit 1
 }
-test
+# test
 
 
 # 将时间转换为Unix时间戳
