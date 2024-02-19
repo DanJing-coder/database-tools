@@ -1,8 +1,5 @@
 # health check for starrocks
 
-## install packages
-pip -r requirements.txt
-
 ## provide starrocks config
 config.ini
 
