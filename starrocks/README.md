@@ -7,11 +7,11 @@ config.ini
 
 >default check tables of 1 replica
 
-python healthy_report.py ./config.ini
+python healthy_report.py --config ./config.ini
 
 >also you can check set replica to 3 as follows
 
-python healthy_report.py ./config.ini 3
+python healthy_report.py --config ./config.ini --replica 3
 
 output example:
 
