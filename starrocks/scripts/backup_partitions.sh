@@ -40,10 +40,10 @@ for i in ${partitionList[@]}
                 echo `mysql -h ${fe_ip} -uroot -P9030 -p${password} -e "use ${db};BACKUP SNAPSHOT ${db}.${snapshotname} TO ${repositoryName} ON (${tblName} PARTITION (${partitionName})) PROPERTIES ('type' = 'full')"`
                 if [[ $? -ne 0 ]]
                 then
-                        echo `date` "Failed to execute the backup command in table：${tblName}_${partitionName}" >> backup_${db}.log
+                        echo `date` "Failed to execute the backup command in table：${tblName}_${partitionName}" >> backup_${db}_pt.log
                         exit 0
                 else
-                        echo `date` "The backup command in table ${tblName}_${partitionName} was successfully executed" >> backup_${db}.log
+                        echo `date` "The backup command in table ${tblName}_${partitionName} was successfully executed" >> backup_${db}_pt.log
                 fi
         fi
 
@@ -57,13 +57,13 @@ for i in ${partitionList[@]}
                     ifFinish="UPLOADING"
                 fi
                 if [[ "${ifFinish}" == "CANCELLED" ]];then
-                    echo `date` "The table ${tblName}_${partitionName} backup failed." >> backup_${db}.log
+                    echo `date` "The table ${tblName}_${partitionName} backup failed." >> backup_${db}_pt.log
                     break
                 elif  [[ "${ifFinish}" == "FINISHED" ]];then
-                    echo `date` "The table ${tblName}_${partitionName} backup success." >> backup_${db}.log
+                    echo `date` "The table ${tblName}_${partitionName} backup success." >> backup_${db}_pt.log
                     break
                 else
-                    echo `date` "The table ${tblName}_${partitionName} backup is running." >> backup_${db}.log
+                    echo `date` "The table ${tblName}_${partitionName} backup is running." >> backup_${db}_pt.log
                 fi
                 sleep ${interval}
             done
