@@ -54,13 +54,13 @@ for i in ${partitionList[@]}
 			`mysql -h ${fe_ip_target} -uroot -P9030 -p${password_target} -e "RESTORE SNAPSHOT ${db_target}.${snapshotname} FROM ${RepositoryName_target} ON (${tblName} PARTITION (${partitionName})) PROPERTIES ('backup_timestamp'='${timestamp}','replication_num' = '3');"`
 			if [[ $? -ne 0 ]]
 			then
-					echo `date` "Failed to execute the restore command in partition：${tblName}_${partitionName}" >> restore_${db_target}.log
+					echo `date` "Failed to execute the restore command in partition：${tblName}_${partitionName}" >> restore_${db_target}_pt.log
 					exit 0
 			else
-					echo `date` "The restore command in partition ${tblName}_${partitionName} was successfully executed!" >> restore_${db_target}.log
+					echo `date` "The restore command in partition ${tblName}_${partitionName} was successfully executed!" >> restore_${db_target}_pt.log
 			fi
 		else
-			echo `date` "The snapshotname of the partition ${tblName}_${partitionName} does not exist!" >> restore_${db_target}.log
+			echo `date` "The snapshotname of the partition ${tblName}_${partitionName} does not exist!" >> restore_${db_target}_pt.log
 			exit 0
         fi
 		
@@ -69,16 +69,16 @@ for i in ${partitionList[@]}
         while [[ "${ifFinish}" != "FINISHED" ]]
 			do
 				if [[ "${ifFinish}" == "CANCELLED" ]];then
-					echo `date` "The partition ${tblName}_${partitionName} restore is failed." >> restore_${db_target}.log
+					echo `date` "The partition ${tblName}_${partitionName} restore is failed." >> restore_${db_target}_pt.log
 					break
 				fi
 
 				sleep ${interval}
 				ifFinish=`mysql -h ${fe_ip_target} -uroot -P9030 -p${password_target} -e "use ${db_target};SHOW restore from ${db_target};" | grep -w ${snapshotname} | awk '{print $5}'`
-				echo `date` "The partition ${tblName}_${partitionName} restore is running." >> restore_${db_target}.log
+				echo `date` "The partition ${tblName}_${partitionName} restore is running." >> restore_${db_target}_pt.log
 			done
 		if [[ "${ifFinish}" == "FINISHED" ]];then
-			echo `date` "The partition ${tblName}_${partitionName} restore successfully" >> restore_${db_target}.log
+			echo `date` "The partition ${tblName}_${partitionName} restore successfully" >> restore_${db_target}_pt.log
 		fi
     done
 
