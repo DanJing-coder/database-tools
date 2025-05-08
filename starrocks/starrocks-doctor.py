@@ -156,7 +156,14 @@ class StarRocksDoctor:
             return {}
 
     def save_to_file(self, data, filename, format='json'):
-        """Save collected data to file"""
+        """Save collected data to file
+        Args:
+            data: Data to save
+            filename: Base filename without extension
+            format: Output format ('json', 'csv', 'yaml', 'txt')
+        Returns:
+            str: Path to the saved file
+        """
         os.makedirs(self.output_dir, exist_ok=True)
         filepath = os.path.join(self.output_dir, f"{filename}_{self.timestamp}.{format}")
 
@@ -164,9 +171,35 @@ class StarRocksDoctor:
             if format == 'json':
                 json.dump(data, f, indent=2, cls=DateTimeEncoder)
             elif format == 'csv':
-                writer = csv.writer(f)
-                for row in data:
-                    writer.writerow(row.values())
+                if isinstance(data, dict):
+                    # For dictionary data, create a flattened CSV
+                    writer = csv.writer(f)
+                    writer.writerow(['Key', 'Value'])
+                    for key, value in data.items():
+                        if isinstance(value, dict):
+                            for subkey, subvalue in value.items():
+                                writer.writerow([f"{key}.{subkey}", subvalue])
+                        else:
+                            writer.writerow([key, value])
+                else:
+                    # For list data, write as is
+                    writer = csv.writer(f)
+                    if data and len(data) > 0:
+                        writer.writerow(data[0].keys())
+                        for row in data:
+                            writer.writerow(row.values())
+            elif format == 'yaml':
+                import yaml
+                yaml.dump(data, f, default_flow_style=False, allow_unicode=True)
+            elif format == 'txt':
+                if isinstance(data, dict):
+                    for key, value in data.items():
+                        f.write(f"{key}: {value}\n")
+                else:
+                    for item in data:
+                        f.write(f"{item}\n")
+            else:
+                raise ValueError(f"Unsupported format: {format}")
 
         return filepath
 
@@ -893,6 +926,8 @@ def main():
     parser.add_argument('--user', required=True, help='Username')
     parser.add_argument('--password', required=True, help='Password')
     parser.add_argument('--output', default='./starrocks_diagnostic', help='Output directory')
+    parser.add_argument('--format', choices=['json', 'csv', 'yaml', 'txt'], default='json',
+                      help='Output format (default: json)')
     parser.add_argument('--module', choices=['schema', 'mv', 'tablet', 'check_replica', 'session_vars', 'be_config', 'fe_config', 'all_configs', 'backend_mapping', 'cluster_state', 'performance_diagnostics', 'query_dump', 'be_stack'], required=True, 
                       help='Module to run: schema (table schema and ID), mv (materialized views), tablet (tablet metadata), check_replica (check and set bad replica), session_vars (modified session variables), be_config (modified BE configurations), fe_config (FE configurations), all_configs (all configurations), backend_mapping (backend host to id mapping), cluster_state (cluster state and configuration), performance_diagnostics (query performance diagnostics), query_dump (get query dump from SQL file), be_stack (get BE stack trace)')
     parser.add_argument('--name', help='Optional. Table name, MV name, tablet ID or replica ID to collect info for')
@@ -915,13 +950,13 @@ def main():
     try:
         if args.module == 'schema':
             result = doctor.collect_table_info(args.name)
-            doctor.save_to_file(result, 'table_info')
+            doctor.save_to_file(result, 'table_info', args.format)
         elif args.module == 'mv':
             result = doctor.collect_mv_info(args.name)
-            doctor.save_to_file(result, 'materialized_view_info')
+            doctor.save_to_file(result, 'materialized_view_info', args.format)
         elif args.module == 'tablet':
             result = doctor.collect_tablet_metadata(args.name)
-            doctor.save_to_file(result, 'tablet_metadata')
+            doctor.save_to_file(result, 'tablet_metadata', args.format)
         elif args.module == 'check_replica':
             if not args.name:
                 print("Error: Tablet ID is required for check_replica module")
@@ -929,37 +964,37 @@ def main():
             doctor.check_and_set_bad_replica(args.name)
         elif args.module == 'session_vars':
             result = doctor.get_modified_session_variables()
-            doctor.save_to_file(result, 'modified_session_variables')
+            doctor.save_to_file(result, 'modified_session_variables', args.format)
         elif args.module == 'be_config':
             result = doctor.get_modified_be_configs()
-            doctor.save_to_file(result, 'modified_be_configs')
+            doctor.save_to_file(result, 'modified_be_configs', args.format)
         elif args.module == 'fe_config':
             result = doctor.get_modified_fe_configs()
-            doctor.save_to_file(result, 'fe_configs')
+            doctor.save_to_file(result, 'fe_configs', args.format)
         elif args.module == 'all_configs':
             result = doctor.collect_all_configs()
-            doctor.save_to_file(result, 'all_configurations')
+            doctor.save_to_file(result, 'all_configurations', args.format)
         elif args.module == 'backend_mapping':
             result = doctor.get_backend_host_id_mapping()
-            doctor.save_to_file(result, 'backend_host_id_mapping')
+            doctor.save_to_file(result, 'backend_host_id_mapping', args.format)
         elif args.module == 'cluster_state':
             result = doctor.collect_cluster_state()
-            doctor.save_to_file(result, 'cluster_state')
+            doctor.save_to_file(result, 'cluster_state', args.format)
         elif args.module == 'performance_diagnostics':
             result = doctor.collect_performance_diagnostics()
-            doctor.save_to_file(result, 'performance_diagnostics')
+            doctor.save_to_file(result, 'performance_diagnostics', args.format)
         elif args.module == 'query_dump':
             if not args.sql_file:
                 print("Error: SQL file is required for query_dump module")
                 return
             result = doctor.get_query_dump(args.sql_file)
-            doctor.save_to_file(result, 'query_dump')
+            doctor.save_to_file(result, 'query_dump', args.format)
         elif args.module == 'be_stack':
             if not args.be_ip:
                 print("Error: BE IP is required for be_stack module")
                 return
             result = doctor.get_be_stack_trace(args.be_ip)
-            doctor.save_to_file(result, 'be_stack_trace')
+            doctor.save_to_file(result, 'be_stack_trace', args.format)
 
         print(f"Diagnostic data collection complete. Files saved to {args.output}")
     finally:
