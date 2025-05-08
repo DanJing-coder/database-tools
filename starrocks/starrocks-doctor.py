@@ -63,7 +63,7 @@ class StarRocksDoctor:
         return {
             'backends': self.execute_query("SHOW PROC '/backends'"),
             'frontends': self.execute_query("SHOW PROC '/frontends'"),
-            'resources': self.execute_query("SHOW RESOURCES"),
+            'resource_groups': self.execute_query("SHOW RESOURCE GROUPS"),
             'version': self.execute_query("SELECT current_version()")[0]['current_version()']
         }
 
