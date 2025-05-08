@@ -280,11 +280,12 @@ def print_replica_info(tables, replica):
     tables_info = sorted(tables, key=lambda i: (i['db_name'], i['tb_name']), reverse=True)
     single_table_format = PrettyTable(['database_name', 'table_name', 'the number of partitions', 'partitions of {} replica'.format(replica)])
     for table in tables_info:
-        if table['is_schema']:
-            single_table_format.add_row([table['db_name'],
+        if len(table["replica_partitions"]) > 0:
+            if table['is_schema']:
+                single_table_format.add_row([table['db_name'],
                                              table['tb_name']+"(schema is {} replica)".format(replica), len(table["replica_partitions"]), ','.join(table["replica_partitions"])])
-        else:
-            single_table_format.add_row([table['db_name'], table['tb_name'], len(table["replica_partitions"]), ','.join(table["replica_partitions"])])
+            else:
+                single_table_format.add_row([table['db_name'], table['tb_name'], len(table["replica_partitions"]), ','.join(table["replica_partitions"])])
     print(single_table_format)
 
 def print_bucket_info(tables, bucket):
@@ -309,7 +310,7 @@ if __name__ == "__main__":
     parser.add_argument('--replica', type=int, nargs='?', default=1, help='replica number')
     parser.add_argument('--bucket', type=int, nargs='?', default=1, help='bucket number')
     parser.add_argument('--partition_size', type=int, nargs='?', default=0, help='partition size')
-    parser.add_argument('--module', type=str, nargs='?', default='all', help='模块,分为all、replicas、buckets、tablets、partitions')
+    parser.add_argument('--module', type=str, nargs='?', default='all', help='模块,分为all、buckets、tablets、partitions')
     parser.add_argument('--debug', type=bool, nargs='?', default=False, help='Debug 模式')
     args = parser.parse_args()
 
