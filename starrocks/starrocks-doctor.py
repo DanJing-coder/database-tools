@@ -15,7 +15,7 @@ class DateTimeEncoder(json.JSONEncoder):
         return super().default(obj)
 
 class StarRocksDoctor:
-    def __init__(self, host, port, user, password, output_dir='./celerdata_diagnostic'):
+    def __init__(self, host, port, user, password, output_dir='./starrocks_diagnostic'):
         self.host = host
         self.port = port
         self.user = user
