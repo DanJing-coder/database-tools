@@ -1,79 +1,138 @@
-# 该工具主要有以下功能
-- 检测每个表的分桶个数
-- 检测分桶是否存在数据倾斜
-- 检测单副本分区或者表
-- 检测单分桶分区或者表
-- 检测数据为0的分区
+# StarRocks Health Report Tool
 
-# 使用方法
+A comprehensive tool for analyzing and reporting the health status of StarRocks database clusters. This tool provides detailed insights into table replicas, buckets, partitions, and overall database health.
 
-```shell
+## Features
 
-$ python healthy_report.py --help
-usage: healthy_report.py [-h] --host HOST --port PORT --user USER --password PASSWORD [--mode {shared_nothing,shared_data}] [--replica REPLICA] [--bucket BUCKET] [--partition_size PARTITION_SIZE]
-                         [--module {all,buckets,tablets,partitions,replicas}] [--debug] [--format {table,json,yaml}] [--output-dir OUTPUT_DIR]
+- **Replica Health Check**: Analyzes replication status and consistency across tables
+- **Bucket Analysis**: Examines bucket distribution and health
+- **Partition Management**: Monitors partition sizes and distribution
+- **Data Size Analysis**: Tracks data size across tables and partitions
+- **Multiple Output Formats**: Supports table, JSON, and YAML output formats
+- **Detailed Reporting**: Generates comprehensive health reports with statistics
 
-StarRocks Health Report Tool
+## Prerequisites
 
-optional arguments:
-  -h, --help            show this help message and exit
-  --host HOST           FE host address
-  --port PORT           FE query port
-  --user USER           Database user
-  --password PASSWORD   Database password
-  --mode {shared_nothing,shared_data}
-                        Cluster mode
-  --replica REPLICA     replica number
-  --bucket BUCKET       bucket number
-  --partition_size PARTITION_SIZE
-                        partition size
-  --module {all,buckets,tablets,partitions,replicas}
-                        Module to run
-  --debug               Enable debug mode
-  --format {table,json,yaml}
-                        Output format
-  --output-dir OUTPUT_DIR
-                        Output directory for reports
+- Python 3.x
+- Required Python packages:
+  - pymysql
+  - prettytable
+  - numpy
+  - pyyaml
 
-# 结果说明
-会输出多个表格
+## Installation
 
-![image](https://github.com/user-attachments/assets/25c0ad93-227b-4d38-b376-f624de9df33e)
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd <repository-directory>
+```
 
-*********************** The Tables of all databases  **************************
-表示集群中所有表的数据量以及分桶的个数、分桶平均数据量和分桶数据量的标准差
+2. Install required packages:
+```bash
+pip install pymysql prettytable numpy pyyaml
+```
 
-datasize of table(/MB)：表的存储大小，三副本后的数据
-replica_counts：表的副本个数（三副本）
-avg of tablet datasize(/MB)：单个桶的数据大小（单副本）
-standard deviation of tablet datasize：单副本单个桶的数据量标准差，这个值越大表示桶的数据量越偏离桶的数据量平均值，也就存在数据倾斜（去除空分区）
+## Usage
 
-*********************** The Tables of 1 Replicas **************************
+### Basic Usage
 
-![image](https://github.com/user-attachments/assets/00bb63cd-8b7c-4669-9734-541e7cc32165)
+```bash
+python healthy_report.py -h <host> -P <port> -u <user> -p <password> [options]
+```
 
+### Command Line Arguments
 
-表示集群中单个副本的分区或者表
-test_map3(schema is 1 replica)：表示test_tb3这个表的建表语句中是1副本
-the number of partitions：单副本的分区个数
-partition of 1 replica：单副本表分区，如果不是分区表，这块显示的即是表名
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `-h` | StarRocks host | localhost |
+| `-P` | StarRocks port | 9030 |
+| `-u` | Username | - |
+| `-p` | Password | - |
+| `-m` | Mode (shared_nothing/shared_data) | shared_nothing |
+| `-r` | Replica number to check | - |
+| `-b` | Bucket number to check | - |
+| `-f` | Output format (table/json/yaml) | table |
+| `-o` | Output directory | ./reports |
+| `-d` | Enable debug mode | False |
 
+### Output Formats
 
-*********************** The Tables of 1 Buckets **************************
+The tool supports three output formats:
 
-![image](https://github.com/user-attachments/assets/17c67ff9-7abd-49b5-91c5-aaac1dbecf3e)
+1. **Table Format** (default)
+   - Human-readable tabular output
+   - Shows detailed statistics and health metrics
 
+2. **JSON Format**
+   - Structured JSON output
+   - Suitable for programmatic processing
 
-表示集群中单个桶的分区或者表
-test_map3(schema is 1 bucket)：表示test_tb3这个表的建表语句中是1个桶
-the number of partitions：单个桶的分区个数
-partition of 1 bucket：单个桶的分区，如果不是分区表，这块显示的即是表名
+3. **YAML Format**
+   - YAML-formatted output
+   - Easy to read and parse
 
+### Example Commands
 
-*********************** The Tables of Null Partitions **************************
+1. Basic health check:
+```bash
+python healthy_report.py -h localhost -P 9030 -u root -p password
+```
 
-![image](https://github.com/user-attachments/assets/3cd2f0ef-e9ed-4ced-a99e-00e742a18c29)
+2. Check specific replica number:
+```bash
+python healthy_report.py -h localhost -P 9030 -u root -p password -r 3
+```
 
-表示集群中存在的空分区
-The number of null partitions：数据为0的分区个数
-null partitions：数据为0的分区名字，通过逗号拼接，如果不是分区表，这块显示的即是表名
+3. Generate JSON report:
+```bash
+python healthy_report.py -h localhost -P 9030 -u root -p password -f json
+```
+
+## Report Contents
+
+The health report includes:
+
+- **Table Information**
+  - Database and table names
+  - Data size
+  - Replica counts
+  - Mean data size
+  - Standard deviation
+  - Partition information
+
+- **Replica Health**
+  - Replica distribution
+  - Consistency checks
+  - Replication status
+
+- **Bucket Analysis**
+  - Bucket distribution
+  - Size distribution
+  - Health metrics
+
+- **Partition Information**
+  - Partition sizes
+  - Distribution analysis
+  - Health status
+
+## Output Files
+
+Reports are saved in the specified output directory (default: `./reports`) with the following structure:
+
+- `health_report.<format>`: Overall health report
+- `replica_info.<format>`: Replica-specific information
+- `bucket_info.<format>`: Bucket analysis
+- `partitions_info.<format>`: Partition details
+
+## Error Handling
+
+The tool includes comprehensive error handling for:
+- Connection issues
+- Query failures
+- Data parsing errors
+- Invalid configurations
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
