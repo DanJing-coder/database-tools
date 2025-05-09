@@ -76,17 +76,17 @@ The tool supports three output formats:
 
 1. Basic health check:
 ```bash
-python healthy_report.py -h localhost -P 9030 -u root -p password
+python healthy_report.py --host localhost --port 9030 --user root --password password
 ```
 
 2. Check specific replica number:
 ```bash
-python healthy_report.py -h localhost -P 9030 -u root -p password -r 3
+python healthy_report.py --host localhost --port 9030 --user root --password password --replica 3
 ```
 
 3. Generate JSON report:
 ```bash
-python healthy_report.py -h localhost -P 9030 -u root -p password -f json
+python healthy_report.py --host localhost --port 9030 --user root --password password --format json
 ```
 
 ## Report Contents
