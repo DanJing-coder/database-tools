@@ -6,37 +6,34 @@
 - 检测数据为0的分区
 
 # 使用方法
-配置文件config.ini
-
-```text
-[common]
-#fe ip，建议使用leader fe
-fe_host = 
-#查询的端口，默认9030
-fe_query_port = 9030
-#建议使用root用户或者具有cluster_admin权限的用户
-user = root
-#对应用户的密码
-password = 
-#部署架构，存算一体(shared_nothing)或者存算分离(shared_data)
-run_mode = shared_data
-```
 
 ```shell
-tar -xf tools-20240717.tar.gz && cd tools-20240717
-#补充集群连接信息，databases不写，会扫描所有库和表
-vi config.ini
-#授予可执行权限
-chmod +x healthy_report
-#默认检测所有表的倾斜情况和单副本表
-./healthy_report --config ./config.ini
-#可查看help信息
-./healthy_report --help
-#查看单副本的表
-./healthy_report --config ./config.ini --module replicas --replica 1
-#查看单个桶的分区或者表
-./healthy_report --config ./config.ini --module buckets --bucket 1
-```
+
+$ python healthy_report.py --help
+usage: healthy_report.py [-h] --host HOST --port PORT --user USER --password PASSWORD [--mode {shared_nothing,shared_data}] [--replica REPLICA] [--bucket BUCKET] [--partition_size PARTITION_SIZE]
+                         [--module {all,buckets,tablets,partitions,replicas}] [--debug] [--format {table,json,yaml}] [--output-dir OUTPUT_DIR]
+
+StarRocks Health Report Tool
+
+optional arguments:
+  -h, --help            show this help message and exit
+  --host HOST           FE host address
+  --port PORT           FE query port
+  --user USER           Database user
+  --password PASSWORD   Database password
+  --mode {shared_nothing,shared_data}
+                        Cluster mode
+  --replica REPLICA     replica number
+  --bucket BUCKET       bucket number
+  --partition_size PARTITION_SIZE
+                        partition size
+  --module {all,buckets,tablets,partitions,replicas}
+                        Module to run
+  --debug               Enable debug mode
+  --format {table,json,yaml}
+                        Output format
+  --output-dir OUTPUT_DIR
+                        Output directory for reports
 
 # 结果说明
 会输出多个表格

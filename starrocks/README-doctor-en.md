@@ -144,7 +144,3 @@ The tool provides detailed error information when encountering issues, including
 - Permission errors
 - Query execution errors
 - Data collection errors
-
-## License
-
-MIT License 

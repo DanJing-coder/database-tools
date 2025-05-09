@@ -145,6 +145,3 @@ python starrocks-doctor.py --host <FE_HOST> --port <FE_PORT> --user <USERNAME> -
 - 查询执行错误
 - 数据收集错误
 
-## 许可证
-
-MIT License
