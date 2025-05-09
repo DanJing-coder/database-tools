@@ -31,7 +31,7 @@ if [[ $1 = "--help" ]]; then
     echo "|   -l 指定操作的节点        |  默认为空,为空时连接 SR 获取集群                   |  非必输  |"
     echo "|                            |  节点信息,节点间用空格或逗号分隔,                  |          |"
     echo "|                            |  修改指定节点配置示例，去掉-o参数可以查看节点配置：|          |"
-    echo "|                            |  ./env_check.sh -l \"10.0.0.1 10.0.0.2\" -oupdate    |          |"
+    echo "|                            |  ./env_check.sh -l '10.0.0.1 10.0.0.2' -oupdate    |          |"
     echo "----------------------------------------------------------------------------------------------"
     echo "| 输出信息:                                                                                  |"
     echo "----------------------------------------------------------------------------------------------"
@@ -134,7 +134,7 @@ if [[ ! -n $node_list ]]; then
         if [[ -n $sr_password ]]; then
             feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends;" 2>/dev/null | awk 'NR!=1{print $2}')
             beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends;" 2>/dev/null | awk 'NR!=1{print $2}')
-        else
+        else 
             feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends;" | awk 'NR!=1{print $2}')
             beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends;" | awk 'NR!=1{print $2}')
         fi
@@ -161,7 +161,7 @@ function check_swap() {
     if [[ "0" = $(sshcheck $1 "cat /proc/sys/vm/swappiness | grep ^0$") && (-n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.swappiness=0$"') || -n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.swappiness = 0$"')) ]]; then
         echo_color green "swp check pass"
     elif [[ "0" = $(sshcheck $1 "cat /proc/sys/vm/swappiness | grep ^0$") && !(-n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.swappiness=0$"') || -n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.swappiness = 0$"')) ]]; then
-        echo_color blue "/etc/sysctl.conf"
+        echo_color red "/etc/sysctl.conf"
     else
         echo_color red "$(sshcheck $1 "cat /proc/sys/vm/swappiness")"
     fi
@@ -170,22 +170,12 @@ function check_swap() {
 # 检查文件打开数
 function check_ulimitn() {
     ulimitnNum=$(sshcheck $1 "ulimit -n")
-    if [[ "65535" -le $ulimitnNum ]]; then
+    if [[ "655350" -le $ulimitnNum ]]; then
         echo_color green "ulimit -n: $ulimitnNum"
     else
         echo_color red "ulimit -n: $ulimitnNum"
+        echo_color red "/etc/security/limits.conf"
     fi
-    # if [[ -n $(cat /etc/security/limits.conf | grep -w "^soft nofile 65536$") && -n $(cat /etc/security/limits.conf | grep -w"^hard nofile 65536$") ]]; then
-    #   NUM_LIMIT=1
-    # else
-    #   NUM_LIMIT=2
-    # fi
-
-    # if [[ (-n $(cat /etc/sysctl.conf | grep "^vm.max_map_count=655360$") || -n $(cat /etc/sysctl.conf | grep "vm.max_map_count = 655360$")) ]]; then
-    #   NUM_LIMIT=1
-    # else
-    #   NUM_LIMIT=2
-    # fi
 }
 
 # 检查 JAVA_HOME 以及 JDK 版本
@@ -204,7 +194,7 @@ function check_overcommit() {
     if [[ "1" = $(sshcheck $1 "cat /proc/sys/vm/overcommit_memory" | grep "^1$") && (-n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.overcommit_memory=1$"') || -n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.overcommit_memory = 1$"')) ]]; then
         echo_color green "ome check pass"
     elif [[ "1" = $(sshcheck $1 "cat /proc/sys/vm/overcommit_memory" | grep "^1$") && !(-n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.overcommit_memory=1$"') || -n $(sshcheck $1 'cat /etc/sysctl.conf | grep "^vm.overcommit_memory = 1$"')) ]]; then
-        echo_color blue "/etc/sysctl.conf "
+        echo_color red "/etc/sysctl.conf"
     else
         echo_color red "$(sshcheck $1 "cat /proc/sys/vm/overcommit_memory")"
     fi
@@ -226,6 +216,7 @@ function check_ulimitu() {
         echo_color green "ulimit -u: $ulimituNum"
     else
         echo_color red "ulimit -u: $ulimituNum"
+        echo_color red "/etc/security/limits.conf"
     fi
     # if [[ -n $(cat /etc/security/limits.conf | grep -w "^soft nofile 65536$") && -n $(cat /etc/security/limits.conf | grep -w"^hard nofile 65536$") ]]; then
     #   NUM_LIMIT=1
@@ -254,7 +245,7 @@ function check_somaxconn() {
     if [[ 1024 -le $(sshcheck $1 "cat /proc/sys/net/core/somaxconn") && (-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^net.core.somaxconn=[0-9]{4,}$"')) ]]; then
         echo_color green "som check pass"
     elif [[ 1024 -le $(sshcheck $1 "cat /proc/sys/net/core/somaxconn") && !(-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^net.core.somaxconn=[0-9]{4,}$"')) ]]; then
-        echo_color blue "check somaxconn in /etc/sysctl.conf"
+        echo_color red "/etc/sysctl.conf"
     else
         echo_color red "$(sshcheck $1 "cat /proc/sys/net/core/somaxconn")"
     fi
@@ -281,7 +272,7 @@ check_selinux() {
     if [[ "Disabled" = $(sshcheck $1 "$(which getenforce)") && (-n $(sshcheck $1 'grep -i "^SELINUX=disabled" /etc/selinux/config')) ]]; then
         echo_color green "selinux check pass"
     elif [[ "Disabled" = $(sshcheck $1 "$(which getenforce)") && !(-n $(sshcheck $1 'grep -i "^SELINUX=disabled" /etc/selinux/config')) ]]; then
-        echo_color blue "check /etc/sysctl.conf "
+        echo_color red "/etc/selinux/config"
     else
         echo_color red "$(sshcheck $1 "$(which getenforce)")"
     fi
@@ -291,28 +282,108 @@ check_selinux() {
 check_FE_pid_ulimitu() {
     pid=$(sshcheck $1 "ps -ef | grep com.starrocks.StarRocksFE |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
     result=$(sshcheck $1 "cat /proc/$pid/limits | grep \"Max processes\" |grep -v grep| awk '{print \"Soft Limit:\"\$3,\"Hard Limit:\"\$4}'")
-    echo $result
+    if [ -z "$result" ]; then
+        echo_color red "No process limits found"
+        return
+    fi
+    
+    # 提取soft limit值
+    soft_limit=$(echo $result | awk '{print $2}' | sed 's/Limit://')
+    if [ "$soft_limit" = "unlimited" ]; then
+        echo_color green "$result"
+    elif [ "$soft_limit" -lt 65535 ]; then
+        echo_color red "$result"
+    else
+        echo_color green "$result"
+    fi
 }
 
 # check FE 进程文件打开数
 check_FE_pid_ulimitn() {
     pid=$(sshcheck $1 "ps -ef | grep com.starrocks.StarRocksFE |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
     result=$(sshcheck $1 "cat /proc/$pid/limits | grep \"Max open files\" |grep -v grep| awk '{print \"Soft Limit:\"\$4,\"Hard Limit:\"\$5}'")
-    echo $result
+    if [ -z "$result" ]; then
+        echo_color red "No process limits found"
+        return
+    fi
+    
+    # 提取soft limit值
+    soft_limit=$(echo $result | awk '{print $2}' | sed 's/Limit://')
+    if [ "$soft_limit" = "unlimited" ]; then
+        echo_color green "$result"
+    elif [ "$soft_limit" -lt 655350 ]; then
+        echo_color red "$result"
+    else
+        echo_color green "$result"
+    fi
 }
 
 # check BE 进程连接最大进程数
 check_BE_pid_ulimitu() {
-    pid=$(sshcheck $1 "ps -ef | grep /bin/start_be.sh |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
+    pid=$(sshcheck $1 "ps -ef  | grep /lib/starrocks_be |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
+    if [ -z "$pid" ]; then
+        pid=$(sshcheck $1 "ps -ef | grep /bin/start_be.sh |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
+    fi
+    
+    if [ -z "$pid" ]; then
+        echo_color red "BE process not found"
+        return
+    fi
+    
+    if ! sshcheck $1 "test -f /proc/$pid/limits" >/dev/null 2>&1; then
+        echo_color red "Cannot access process limits"
+        return
+    fi
+    
     result=$(sshcheck $1 "cat /proc/$pid/limits | grep \"Max processes\" |grep -v grep| awk '{print \"Soft Limit:\"\$3,\"Hard Limit:\"\$4}'")
-    echo $result
+    if [ -z "$result" ]; then
+        echo_color red "No process limits found"
+        return
+    fi
+    
+    # 提取soft limit值
+    soft_limit=$(echo $result | awk '{print $2}' | sed 's/Limit://')
+    if [ "$soft_limit" = "unlimited" ]; then
+        echo_color green "$result"
+    elif [ "$soft_limit" -lt 65535 ]; then
+        echo_color red "$result"
+    else
+        echo_color green "$result"
+    fi
 }
 
 # check BE 进程文件打开数
 check_BE_pid_ulimitn() {
-    pid=$(sshcheck $1 "ps -ef  | grep /bin/start_be.sh |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
+    pid=$(sshcheck $1 "ps -ef  | grep /lib/starrocks_be |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
+    if [ -z "$pid" ]; then
+        pid=$(sshcheck $1 "ps -ef | grep /bin/start_be.sh |grep -v grep| awk -F\" \" '{print \$2}'  |head -n 1")
+    fi
+    
+    if [ -z "$pid" ]; then
+        echo_color red "BE process not found"
+        return
+    fi
+    
+    if ! sshcheck $1 "test -f /proc/$pid/limits" >/dev/null 2>&1; then
+        echo_color red "Cannot access process limits"
+        return
+    fi
+    
     result=$(sshcheck $1 "cat /proc/$pid/limits | grep \"Max open files\" |grep -v grep| awk '{print \"Soft Limit:\"\$4,\"Hard Limit:\"\$5}'")
-    echo $result
+    if [ -z "$result" ]; then
+        echo_color red "No process limits found"
+        return
+    fi
+    
+    # 提取soft limit值
+    soft_limit=$(echo $result | awk '{print $2}' | sed 's/Limit://')
+    if [ "$soft_limit" = "unlimited" ]; then
+        echo_color green "$result"
+    elif [ "$soft_limit" -lt 655350 ]; then
+        echo_color red "$result"
+    else
+        echo_color green "$result"
+    fi
 }
 
 # FE节点检查 JVM 配置的大小 ps -ef |grep "com.starrocks.StarRocksFE" |grep -v grep| awk '{for(i=1;i<=NF;i++) if ($i ~ /-Xmx[0-9]*m/) print $i}'
@@ -353,17 +424,33 @@ check_disk_prop() {
     echo_color green "sum_disk:$sum_disk hdd_num:$hdd_num ssd_num:$ssd_num"
 }
 
-# 检查 be 节点磁盘剩余可用
-# TODO
-
 # 检查进程可以拥有的VMA(虚拟内存区域)的数量
 function check_max_map_count() {
-    if [[ 262144 -le $(sshcheck $1 "$(which sysctl) -a 2>/dev/null|grep -w 'vm.max_map_count'"|awk -F '[= ]+' '{print $2}') && (-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^vm.max_map_count=[0-9]{6,}$"')) ]]; then
-        echo_color green "max_map_count check pass"
-    elif [[ 262144 -le $(sshcheck $1 "$(which sysctl) -a 2>/dev/null|grep -w 'vm.max_map_count'"|awk -F '[= ]+' '{print $2}') && !(-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^vm.max_map_count=[0-9]{6,}$"')) ]]; then
-        echo_color blue "check max_map_count in /etc/sysctl.conf"
+    # Get total memory in GB
+    total_mem_gb=$(sshcheck $1 "free -g | awk 'NR==2{print \$2}'")
+    
+    # Determine required max_map_count based on memory size
+    required_max_map_count=262144  # Default for 32GB
+    if [ $total_mem_gb -ge 1024 ]; then
+        required_max_map_count=8388608
+    elif [ $total_mem_gb -ge 512 ]; then
+        required_max_map_count=4194304
+    elif [ $total_mem_gb -ge 256 ]; then
+        required_max_map_count=2097152
+    elif [ $total_mem_gb -ge 128 ]; then
+        required_max_map_count=1048576
+    elif [ $total_mem_gb -ge 64 ]; then
+        required_max_map_count=524288
+    fi
+
+    current_max_map_count=$(sshcheck $1 "$(which sysctl) -a 2>/dev/null|grep -w 'vm.max_map_count'"|awk -F '[= ]+' '{print $2}')
+    
+    if [[ $current_max_map_count -ge $required_max_map_count && (-n $(sshcheck $1 "cat /etc/sysctl.conf | grep -E '^vm.max_map_count=[0-9]+$'")) ]]; then
+        echo_color green "max_map_count check pass (${current_max_map_count} >= ${required_max_map_count})"
+    elif [[ $current_max_map_count -ge $required_max_map_count && !(-n $(sshcheck $1 "cat /etc/sysctl.conf | grep -E '^vm.max_map_count=[0-9]+$'")) ]]; then
+        echo_color red "check max_map_count in /etc/sysctl.conf"
     else
-        echo_color red "$(sshcheck $1 "$(which sysctl) -a2 >/dev/null|grep -w 'vm.max_map_count'")"
+        echo_color red "current: ${current_max_map_count}, required: ${required_max_map_count}"
     fi
 }
 
@@ -484,15 +571,15 @@ function change_limit() {
     fi
 
     if [[ -z $(sshUpdate $1 'grep "^*.*soft.*nofile" /etc/security/limits.conf') ]]; then
-        sshUpdate $1 'echo "* soft nofile 65535" >> /etc/security/limits.conf'
+        sshUpdate $1 'echo "* soft nofile 655350" >> /etc/security/limits.conf'
     else
-        sshUpdate $1 'sed -i "s/^* *soft *nofile.*/* soft nofile 65535/" /etc/security/limits.conf'
+        sshUpdate $1 'sed -i "s/^* *soft *nofile.*/* soft nofile 655350/" /etc/security/limits.conf'
     fi
 
     if [[ -z $(sshUpdate $1 'grep "^*.*hard.*nofile" /etc/security/limits.conf') ]]; then
-        sshUpdate $1 'echo "* hard nofile 65535" >> /etc/security/limits.conf'
+        sshUpdate $1 'echo "* hard nofile 655350" >> /etc/security/limits.conf'
     else
-        sshUpdate $1 'sed -i "s/^* *hard *nofile.*/* hard nofile 65535/" /etc/security/limits.conf'
+        sshUpdate $1 'sed -i "s/^* *hard *nofile.*/* hard nofile 655350/" /etc/security/limits.conf'
     fi
 
     if [[ -z $(sshUpdate $1 'grep "^*.*soft.*stack" /etc/security/limits.conf') ]]; then
@@ -540,7 +627,7 @@ function change_limit() {
 # 检查指定节点信息
 function node_check() {
     # 对节点进行检查
-    node_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " clock check")\n"
+    node_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
 
     for hostname in $*; do
         {
@@ -584,7 +671,10 @@ function node_check() {
                 # 检查进程可以拥有的VMA(虚拟内存区域)的数量
                 check_max_map_count=$(check_max_map_count $hostname)
 
-                detail="$nodeConn,$nodeUlimitn,$nodeSwap,$nodeJDK,$nodeOvercommit,$nodeCpu,$nodeUlimitu,$nodeHuge,$nodeSomaxconn,$nodeCheck_tcp_overflow,$nodeCheck_selinux,$nodeCheck_sys_mem,$nodeCheck_oom_error,$nodeCheck_mem_error,$nodeCheck_disk_prop,$check_max_map_count,$nodeCheck_clock"
+                # 添加磁盘空间检查
+                disk_space_info=$(check_fe_disk_space $hostname)
+                
+                detail="$nodeConn,$nodeUlimitn,$nodeSwap,$nodeJDK,$nodeOvercommit,$nodeCpu,$nodeUlimitu,$nodeHuge,$nodeSomaxconn,$nodeCheck_tcp_overflow,$nodeCheck_selinux,$nodeCheck_sys_mem,$nodeCheck_oom_error,$nodeCheck_mem_error,$nodeCheck_disk_prop,$check_max_map_count,$nodeCheck_clock,$disk_space_info"
                 node_check_predata="${node_check_predata}${detail}\n"
             fi
         }
@@ -605,7 +695,7 @@ function node_check() {
 # be_checked=()
 # fe节点进行检查
 function fe_check() {
-    fe_check_predata="$(echo_color yellow "FE节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " Xmx 值检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量")\n"
+    fe_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
     for hostname in ${feIps}; do
         {
             $(ssh -o ConnectTimeout=3 -o PasswordAuthentication=no -o NumberOfPasswordPrompts=0 ${exe_user}@$hostname "pwd" &>/dev/null)
@@ -648,7 +738,10 @@ function fe_check() {
                 # 检查进程可以拥有的VMA(虚拟内存区域)的数量
                 check_max_map_count=$(check_max_map_count $hostname)
 
-                detail="$feconn,$feUlimitn,$feswap,$feJDK,$fe_check_Xmx,$feOvercommit,$feCpu,$feUlimitu,$feHuge,$feSomaxconn,$feCheck_tcp_overflow,$feCheck_selinux,$feCheck_sys_mem,$feCheck_oom_error,$feCheck_mem_error,$feCheck_disk_prop,$check_max_map_count"
+                # 添加磁盘空间检查
+                disk_space_info=$(check_fe_disk_space $hostname)
+                
+                detail="$feconn,$feUlimitn,$feswap,$feJDK,$fe_check_Xmx,$feOvercommit,$feCpu,$feUlimitu,$feHuge,$feSomaxconn,$feCheck_tcp_overflow,$feCheck_selinux,$feCheck_sys_mem,$feCheck_oom_error,$feCheck_mem_error,$feCheck_disk_prop,$check_max_map_count,$feCheck_clock,$disk_space_info"
                 fe_check_predata="${fe_check_predata}${detail}\n"
             fi
         } #&
@@ -663,7 +756,7 @@ function fe_check() {
 
 function be_check() {
     # be节点进行检查
-    be_check_predata="$(echo_color yellow "BE节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量")\n"
+    be_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
 
     for hostname in ${beIps}; do
         {
@@ -713,7 +806,10 @@ function be_check() {
                 # 检查进程可以拥有的VMA(虚拟内存区域)的数量
                 check_max_map_count=$(check_max_map_count $hostname)
 
-                detail="$beconn,$beUlimitn,$beswap,$beJDK,$beOvercommit,$beCpu,$beUlimitu,$beHuge,$beSomaxconn,$beCheck_tcp_overflow,$beCheck_selinux,$beCheck_sys_mem,$beCheck_oom_error,$beCheck_mem_error,$beCheck_disk_prop,$check_max_map_count"
+                # 添加磁盘空间检查
+                disk_space_info=$(check_be_disk_space $hostname)
+                
+                detail="$beconn,$beUlimitn,$beswap,$beJDK,$beOvercommit,$beCpu,$beUlimitu,$beHuge,$beSomaxconn,$beCheck_tcp_overflow,$beCheck_selinux,$beCheck_sys_mem,$beCheck_oom_error,$beCheck_mem_error,$beCheck_disk_prop,$check_max_map_count,$beCheck_clock,$disk_space_info"
                 be_check_predata="${be_check_predata}${detail}\n"
             fi
         } #&
@@ -861,6 +957,138 @@ function be_change() {
         }
     done
     echo "********************************************************************************************$(echo_color yellow "BE 节点参数修改完成")****************************************************************************************************"
+}
+
+# 检查磁盘空间
+function check_disk_space() {
+    local hostname=$1
+    local mount_point=$2
+    # 排除tmpfs和devtmpfs，只显示实际磁盘空间
+    local space_info=$(sshcheck $hostname "df -h $mount_point | grep -v 'tmpfs\|devtmpfs' | awk 'NR==2{print \$4}'")
+    if [ -z "$space_info" ]; then
+        echo "No physical disk found"
+        return
+    fi
+    
+    # 提取数字部分并转换为GB
+    local space_num=$(echo $space_info | sed 's/[^0-9.]//g')
+    local space_unit=$(echo $space_info | sed 's/[0-9.]//g')
+    
+    # 转换为GB进行比较
+    if [ "$space_unit" = "T" ]; then
+        space_num=$(echo "$space_num * 1024" | bc)
+    elif [ "$space_unit" = "M" ]; then
+        space_num=$(echo "scale=2; $space_num / 1024" | bc)
+    elif [ "$space_unit" = "K" ]; then
+        space_num=$(echo "scale=2; $space_num / 1024 / 1024" | bc)
+    fi
+    
+    if (( $(echo "$space_num >= 10" | bc -l) )); then
+        echo "$mount_point: $space_info"
+    else
+        echo "$mount_point: $space_info"
+    fi
+}
+
+# 检查FE节点磁盘空间
+function check_fe_disk_space() {
+    local hostname=$1
+    local disk_info=""
+    
+    # 检查根目录
+    root_space=$(check_disk_space $hostname "/")
+    if [ "$root_space" != "No physical disk found" ]; then
+        disk_info="${disk_info}${root_space};"
+    fi
+    
+    # 从show frontends获取FE的IP和HTTP端口
+    if [[ -n $sr_password ]]; then
+        fe_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+    else
+        fe_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+    fi
+    
+    # 获取当前FE的IP和端口
+    fe_ip=""
+    fe_http_port=""
+    while read -r line; do
+        if [[ $line == $hostname ]]; then
+            fe_ip=$line
+        elif [[ -n $fe_ip && -z $fe_http_port ]]; then
+            fe_http_port=$line
+            break
+        fi
+    done <<< "$fe_info"
+    
+    echo $fe_ip,$fe_http_port
+    # 从FE的varz获取meta_dir
+    if [ ! -z "$fe_ip" ] && [ ! -z "$fe_http_port" ]; then
+        if [[ -n $sr_password ]]; then
+            meta_dir=$(curl -s -u "${sr_user}:${sr_password}" "http://${fe_ip}:${fe_http_port}/variable" | grep "meta_dir" | awk -F'=' '{print $2}' | tr -d ' ')
+        else
+            meta_dir=$(curl -s -u "${sr_user}:" "http://${fe_ip}:${fe_http_port}/variable" | grep "meta_dir" | awk -F'=' '{print $2}' | tr -d ' ')
+        fi
+        
+        if [ ! -z "$meta_dir" ]; then
+            meta_space=$(check_disk_space $hostname "$meta_dir")
+            if [ "$meta_space" != "No physical disk found" ]; then
+                disk_info="${disk_info}${meta_space};"
+            fi
+        fi
+    fi
+    
+    echo "$disk_info"
+}
+
+# 检查BE节点磁盘空间
+function check_be_disk_space() {
+    local hostname=$1
+    local disk_info=""
+    
+    # 检查根目录
+    root_space=$(check_disk_space $hostname "/")
+    if [ "$root_space" != "No physical disk found" ]; then
+        disk_info="${disk_info}${root_space};"
+    fi
+    
+    # 从show backends获取BE的IP和HTTP端口
+    if [[ -n $sr_password ]]; then
+        be_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+    else
+        be_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+    fi
+    
+    # 获取当前BE的IP和端口
+    be_ip=""
+    be_http_port=""
+    while read -r line; do
+        if [[ $line == $hostname ]]; then
+            be_ip=$line
+        elif [[ -n $be_ip && -z $be_http_port ]]; then
+            be_http_port=$line
+            break
+        fi
+    done <<< "$be_info"
+    
+    # 从BE的varz获取storage_root_path
+    if [ ! -z "$be_ip" ] && [ ! -z "$be_http_port" ]; then
+        storage_paths=$(curl -s "http://${be_ip}:${be_http_port}/varz" | grep "storage_root_path" | awk -F'=' '{print $2}' | tr -d ' ')
+        
+        if [ ! -z "$storage_paths" ]; then
+            # 处理多个存储路径（用分号分隔）
+            IFS=';' read -ra paths <<< "$storage_paths"
+            for path in "${paths[@]}"; do
+                if [ ! -z "$path" ]; then
+                    storage_space=$(check_disk_space $hostname "$path")
+                    if [ "$storage_space" != "No physical disk found" ]; then
+                        disk_info="${disk_info}${storage_space};"
+                    fi
+                fi
+            done
+        fi
+    fi
+    
+    echo "$disk_info"
 }
 
 if [[ -n $node_list ]]; then
