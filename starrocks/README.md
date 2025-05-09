@@ -81,7 +81,7 @@ python healthy_report.py --host localhost --port 9030 --user root --password pas
 
 2. Check specific replica number:
 ```bash
-python healthy_report.py --host localhost --port 9030 --user root --password password --replica 3
+python healthy_report.py --host localhost --port 9030 --user root --password password --module replicas --replica 3
 ```
 
 3. Generate JSON report:
