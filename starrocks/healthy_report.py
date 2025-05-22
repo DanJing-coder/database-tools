@@ -78,21 +78,29 @@ class BaseCheck:
 
     def convert_size(self, size_str):
         """Convert size string to bytes"""
-        capacity_dict = {
-            "B": 1,
-            "KB": 1024,
-            "MB": 1024 * 1024,
-            "GB": 1024 * 1024 * 1024,
-            "TB": 1024 * 1024 * 1024 * 1024,
-            "PB": 1024 * 1024 * 1024 * 1024 * 1024
-        }
-        
-        for unit, multiplier in capacity_dict.items():
-            if unit in size_str:
-                try:
-                    return float(size_str.split(unit)[0].strip()) * multiplier
-                except ValueError:
-                    return 0
+        if not size_str:
+            return 0
+        try:
+            # 纯数字直接返回字节数
+            if size_str.replace('.', '', 1).isdigit():
+                return float(size_str)
+            # 正则提取数值和单位
+            match = re.match(r'([0-9.]+)\s*([A-Za-z]+)', size_str)
+            if match:
+                num, unit = match.groups()
+                unit = unit.upper()
+                capacity_dict = {
+                    "B": 1,
+                    "KB": 1024,
+                    "MB": 1024 * 1024,
+                    "GB": 1024 * 1024 * 1024,
+                    "TB": 1024 * 1024 * 1024 * 1024,
+                    "PB": 1024 * 1024 * 1024 * 1024 * 1024
+                }
+                if unit in capacity_dict:
+                    return float(num) * capacity_dict[unit]
+        except Exception as e:
+            print(f"convert_size error: {e}, input: {size_str}")
         return 0
 
     def get_all_dbs(self):
@@ -227,14 +235,19 @@ class BaseCheck:
                        tablet_array.shape in ((0,), (1,))):
                     sqrt = np.sqrt(np.var(tablet_array, ddof=1))
 
+                # 保留原始的 replica_partitions，不去掉空分区
+                replica_partitions = table_info["replica_partition"]
+                print(round(table_info["data_size"]/1024/1024, 2))
+
+
                 tables_info.append({
                     "db_name": db,
                     "tb_name": table,
                     "data_size": round(table_info["data_size"]/1024/1024, 2),
                     "replica_counts": table_info["replica_counts"],
-                    "mean": round(np.mean(tablet_array)/1024/1024, 2) if tablet_array.shape != (0,) else 0.0,
+                    "mean": round(table_info["data_size"]/table_info["replica_counts"]/1024/1024, 2) if table_info["replica_counts"] > 0 else 0.0,
                     "sqrt": round(sqrt/1024/1024, 2),
-                    "replica_partitions": table_info["replica_partition"],
+                    "replica_partitions": replica_partitions,
                     "bucket_partitions": table_info["bucket_partitions"],
                     "null_partitions": table_info["null_partitions"],
                     "is_schema": schema
@@ -271,13 +284,16 @@ def format_tables_to_table(tables):
     table_format = PrettyTable([
         'database_name', 'table_name', 'datasize of table(/MB)',
         'replica_counts', 'avg of tablet datasize(/MB)',
-        'standard deviation of tablet datasize'
+        'standard deviation of tablet datasize', 'empty partition tablets count'
     ])
     
     for table in sorted(tables, key=lambda i: (i['replica_counts'], i['db_name'], i['tb_name']), reverse=True):
+        # Calculate mean using data_size/replica_counts for consistency
+        mean_size = round(table['data_size']/table['replica_counts'], 2) if table['replica_counts'] > 0 else 0.0
         table_format.add_row([
             table['db_name'], table['tb_name'], table['data_size'],
-            table['replica_counts'], table['mean'], table['sqrt']
+            table['replica_counts'], mean_size, table['sqrt'],
+            len(table['null_partitions'])
         ])
     return str(table_format)
 
@@ -401,7 +417,7 @@ def print_partitions_info(tables, partition_size, output_format='table', output_
             table_format.add_row([
                 item['database_name'], item['table_name'],
                 item['null_partitions_count'],
-                ','.join(item['null_partitions'])
+                '\\n'.join([', '.join(item['null_partitions'][i:i+5]) for i in range(0, len(item['null_partitions']), 5)])
             ])
         data = str(table_format)
 
