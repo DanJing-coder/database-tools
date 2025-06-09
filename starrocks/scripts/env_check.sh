@@ -644,7 +644,7 @@ function change_limit() {
 # 检查指定节点信息
 function node_check() {
     # 对节点进行检查
-    node_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
+    node_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " 最大线程数"),$(echo_color yellow " 最大PID数"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
 
     for hostname in $*; do
         {
@@ -691,7 +691,12 @@ function node_check() {
                 # 添加磁盘空间检查
                 disk_space_info=$(check_fe_disk_space $hostname)
                 
-                detail="$nodeConn,$nodeUlimitn,$nodeSwap,$nodeJDK,$nodeOvercommit,$nodeCpu,$nodeUlimitu,$nodeHuge,$nodeSomaxconn,$nodeCheck_tcp_overflow,$nodeCheck_selinux,$nodeCheck_sys_mem,$nodeCheck_oom_error,$nodeCheck_mem_error,$nodeCheck_disk_prop,$check_max_map_count,$nodeCheck_clock,$disk_space_info"
+                # 检查最大线程数
+                nodeCheck_threads_max=$(check_threads_max $hostname)
+                # 检查最大PID数
+                nodeCheck_pid_max=$(check_pid_max $hostname)
+                
+                detail="$nodeConn,$nodeUlimitn,$nodeSwap,$nodeJDK,$nodeOvercommit,$nodeCpu,$nodeUlimitu,$nodeHuge,$nodeSomaxconn,$nodeCheck_tcp_overflow,$nodeCheck_selinux,$nodeCheck_sys_mem,$nodeCheck_oom_error,$nodeCheck_mem_error,$nodeCheck_disk_prop,$check_max_map_count,$nodeCheck_threads_max,$nodeCheck_pid_max,$nodeCheck_clock,$disk_space_info"
                 node_check_predata="${node_check_predata}${detail}\n"
             fi
         }
@@ -712,7 +717,7 @@ function node_check() {
 # be_checked=()
 # fe节点进行检查
 function fe_check() {
-    fe_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
+    fe_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " 最大线程数"),$(echo_color yellow " 最大PID数"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
     for hostname in ${feIps}; do
         {
             $(ssh -o ConnectTimeout=3 -o PasswordAuthentication=no -o NumberOfPasswordPrompts=0 ${exe_user}@$hostname "pwd" &>/dev/null)
@@ -758,7 +763,12 @@ function fe_check() {
                 # 添加磁盘空间检查
                 disk_space_info=$(check_fe_disk_space $hostname)
                 
-                detail="$feconn,$feUlimitn,$feswap,$feJDK,$fe_check_Xmx,$feOvercommit,$feCpu,$feUlimitu,$feHuge,$feSomaxconn,$feCheck_tcp_overflow,$feCheck_selinux,$feCheck_sys_mem,$feCheck_oom_error,$feCheck_mem_error,$feCheck_disk_prop,$check_max_map_count,$feCheck_clock,$disk_space_info"
+                # 检查最大线程数
+                feCheck_threads_max=$(check_threads_max $hostname)
+                # 检查最大PID数
+                feCheck_pid_max=$(check_pid_max $hostname)
+                
+                detail="$feconn,$feUlimitn,$feswap,$feJDK,$fe_check_Xmx,$feOvercommit,$feCpu,$feUlimitu,$feHuge,$feSomaxconn,$feCheck_tcp_overflow,$feCheck_selinux,$feCheck_sys_mem,$feCheck_oom_error,$feCheck_mem_error,$feCheck_disk_prop,$check_max_map_count,$feCheck_threads_max,$feCheck_pid_max,$feCheck_clock,$disk_space_info"
                 fe_check_predata="${fe_check_predata}${detail}\n"
             fi
         } #&
@@ -773,7 +783,7 @@ function fe_check() {
 
 function be_check() {
     # be节点进行检查
-    be_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
+    be_check_predata="$(echo_color yellow "节点IP"),$(echo_color yellow " 打开文件数"),$(echo_color yellow " SWAPPINESS 开关"),$(echo_color yellow " JDK 检查"),$(echo_color yellow " OVERCOMMIT_MEMORY"),$(echo_color yellow " CPU"),$(echo_color yellow " 最大进程数"),$(echo_color yellow " Huge Pages"),$(echo_color yellow " Somaxconn"),$(echo_color yellow " tcp_abort_on_overflow"),$(echo_color yellow " selinux check"),$(echo_color yellow " 节点内存"),$(echo_color yellow " 是否发生OOM"),$(echo_color yellow " 内存是否故障"),$(echo_color yellow " 磁盘属性"),$(echo_color yellow " VMA 数量"),$(echo_color yellow " 最大线程数"),$(echo_color yellow " 最大PID数"),$(echo_color yellow " clock check"),$(echo_color yellow " 磁盘空间")\n"
 
     for hostname in ${beIps}; do
         {
@@ -826,7 +836,12 @@ function be_check() {
                 # 添加磁盘空间检查
                 disk_space_info=$(check_be_disk_space $hostname)
                 
-                detail="$beconn,$beUlimitn,$beswap,$beJDK,$beOvercommit,$beCpu,$beUlimitu,$beHuge,$beSomaxconn,$beCheck_tcp_overflow,$beCheck_selinux,$beCheck_sys_mem,$beCheck_oom_error,$beCheck_mem_error,$beCheck_disk_prop,$check_max_map_count,$beCheck_clock,$disk_space_info"
+                # 检查最大线程数
+                beCheck_threads_max=$(check_threads_max $hostname)
+                # 检查最大PID数
+                beCheck_pid_max=$(check_pid_max $hostname)
+                
+                detail="$beconn,$beUlimitn,$beswap,$beJDK,$beOvercommit,$beCpu,$beUlimitu,$beHuge,$beSomaxconn,$beCheck_tcp_overflow,$beCheck_selinux,$beCheck_sys_mem,$beCheck_oom_error,$beCheck_mem_error,$beCheck_disk_prop,$check_max_map_count,$beCheck_threads_max,$beCheck_pid_max,$beCheck_clock,$disk_space_info"
                 be_check_predata="${be_check_predata}${detail}\n"
             fi
         } #&
@@ -921,6 +936,8 @@ function change_opt() {
     change_somaxconn $1
     change_tcp $1
     change_mmc $1
+    change_threads_max $1
+    change_pid_max $1
     # 刷新配置
     sshUpdate $1 'sysctl -p'
 }
@@ -1106,6 +1123,50 @@ function check_be_disk_space() {
     fi
     
     echo "$disk_info"
+}
+
+## 检查最大线程数
+function check_threads_max() {
+    threads_max=$(sshcheck $1 "cat /proc/sys/kernel/threads-max")
+    if [[ $threads_max -ge 120000 && (-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^kernel.threads-max=[0-9]+$"')) ]]; then
+        echo_color green "threads-max check pass ($threads_max)"
+    elif [[ $threads_max -ge 120000 && !(-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^kernel.threads-max=[0-9]+$"')) ]]; then
+        echo_color red "check kernel.threads-max in /etc/sysctl.conf ($threads_max)"
+    else
+        echo_color red "current: ${threads_max}, required: 120000"
+    fi
+}
+
+## 检查最大PID数
+function check_pid_max() {
+    pid_max=$(sshcheck $1 "cat /proc/sys/kernel/pid_max")
+    if [[ $pid_max -ge 200000 && (-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^kernel.pid_max=[0-9]+$"')) ]]; then
+        echo_color green "pid-max check pass ($pid_max)"
+    elif [[ $pid_max -ge 200000 && !(-n $(sshcheck $1 'cat /etc/sysctl.conf | grep -E "^kernel.pid_max=[0-9]+$"')) ]]; then
+        echo_color red "check kernel.pid_max in /etc/sysctl.conf ($pid_max)"
+    else
+        echo_color red "current: ${pid_max}, required: 200000"
+    fi
+}
+
+# 新增修改 kernel.threads-max 参数
+function change_threads_max() {
+    sshUpdate $1 'echo "120000" > /proc/sys/kernel/threads-max'
+    if [[ -z $(sshUpdate $1 'grep "kernel.threads-max" /etc/sysctl.conf') ]]; then
+        sshUpdate $1 'echo "kernel.threads-max=120000" >> /etc/sysctl.conf'
+    else
+        sshUpdate $1 'sed -i "s/^kernel.threads-max *=.*/kernel.threads-max = 120000/" /etc/sysctl.conf'
+    fi
+}
+
+# 新增修改 kernel.pid_max 参数
+function change_pid_max() {
+    sshUpdate $1 'echo "200000" > /proc/sys/kernel/pid_max'
+    if [[ -z $(sshUpdate $1 'grep "kernel.pid_max" /etc/sysctl.conf') ]]; then
+        sshUpdate $1 'echo "kernel.pid_max=200000" >> /etc/sysctl.conf'
+    else
+        sshUpdate $1 'sed -i "s/^kernel.pid_max *=.*/kernel.pid_max = 200000/" /etc/sysctl.conf'
+    fi
 }
 
 if [[ -n $node_list ]]; then
