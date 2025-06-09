@@ -431,15 +431,15 @@ function check_max_map_count() {
     
     # Determine required max_map_count based on memory size
     required_max_map_count=262144  # Default for 32GB
-    if [ $total_mem_gb -ge 1024 ]; then
+    if [ $total_mem_gb -ge 1000 ]; then
         required_max_map_count=8388608
-    elif [ $total_mem_gb -ge 512 ]; then
+    elif [ $total_mem_gb -ge 500 ]; then
         required_max_map_count=4194304
-    elif [ $total_mem_gb -ge 256 ]; then
+    elif [ $total_mem_gb -ge 240 ]; then
         required_max_map_count=2097152
-    elif [ $total_mem_gb -ge 128 ]; then
+    elif [ $total_mem_gb -ge 120 ]; then
         required_max_map_count=1048576
-    elif [ $total_mem_gb -ge 64 ]; then
+    elif [ $total_mem_gb -ge 60 ]; then
         required_max_map_count=524288
     fi
 
@@ -543,20 +543,37 @@ function change_tcp() {
 
 #设置max_map_count参数 1
 function change_mmc() {
-    sshUpdate $1 'echo "262144" >> /proc/sys/vm/max_map_count'
+    # Get total memory in GB
+    total_mem_gb=$(sshcheck $1 "free -g | awk 'NR==2{print \$2}'")
+    
+    # Determine required max_map_count based on memory size
+    required_max_map_count=262144  # Default for 32GB
+    if [ $total_mem_gb -ge 1000 ]; then
+        required_max_map_count=8388608
+    elif [ $total_mem_gb -ge 500 ]; then
+        required_max_map_count=4194304
+    elif [ $total_mem_gb -ge 240 ]; then
+        required_max_map_count=2097152
+    elif [ $total_mem_gb -ge 120 ]; then
+        required_max_map_count=1048576
+    elif [ $total_mem_gb -ge 60 ]; then
+        required_max_map_count=524288
+    fi
+    
+    sshUpdate $1 "echo \"$required_max_map_count\" > /proc/sys/vm/max_map_count"
     # 配置文件/etc/sysctl.conf， 设置max_map_count参数
     if [[ -z $(sshUpdate $1 'grep "vm.max_map_count" /etc/sysctl.conf') ]]; then
-        sshUpdate $1 'echo "vm.max_map_count=262144" >> /etc/sysctl.conf'
+        sshUpdate $1 "echo \"vm.max_map_count=$required_max_map_count\" >> /etc/sysctl.conf"
     else
-        sshUpdate $1 'sed -i "s/^vm.max_map_count *=.*/vm.max_map_count = 262144/" /etc/sysctl.conf'
+        sshUpdate $1 "sed -i \"s/^vm.max_map_count *=.*/vm.max_map_count = $required_max_map_count/\" /etc/sysctl.conf"
     fi
 }
 
 # 资源限制
 function change_limit() {
     # 临时修改该参数
-    sshUpdate $1 'ulimit -n 65536'
-    sshUpdate $1 'ulimit -u 65536'
+    sshUpdate $1 'ulimit -n 655350'
+    sshUpdate $1 'ulimit -u 65535'
     # 在文件 /etc/security/limits.conf 添加配置
     if [[ -z $(sshUpdate $1 'grep "^*.*soft.*nproc" /etc/security/limits.conf') ]]; then
         sshUpdate $1 'echo "* soft nproc 65535" >> /etc/security/limits.conf'
