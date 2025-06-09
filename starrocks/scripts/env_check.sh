@@ -1027,6 +1027,7 @@ function check_disk_space() {
 # 检查FE节点磁盘空间
 function check_fe_disk_space() {
     local hostname=$1
+    local explicit_http_port=$2 # New optional argument
     local disk_info=""
     
     # 检查根目录
@@ -1035,26 +1036,32 @@ function check_fe_disk_space() {
         disk_info="${disk_info}${root_space};"
     fi
     
-    # 从show frontends获取FE的IP和HTTP端口
-    if [[ -n $sr_password ]]; then
-        fe_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
-    else
-        fe_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+    local fe_ip=$hostname
+    local fe_http_port="$explicit_http_port" # Use explicit port if provided
+
+    # If no explicit port was provided, and we are NOT in manual node list mode, then try to get from cluster
+    if [ -z "$fe_http_port" ] && [[ -z "$node_list" ]]; then
+        # 从show frontends获取FE的IP和HTTP端口
+        if [[ -n $sr_password ]]; then
+            fe_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+        else
+            fe_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+        fi
+
+        # 获取当前FE的IP和端口
+        local found_fe_ip=""
+        local found_fe_http_port_from_db=""
+        while read -r line; do
+            if [[ "$line" == "$hostname" ]]; then
+                found_fe_ip=$line
+            elif [[ -n "$found_fe_ip" && -z "$found_fe_http_port_from_db" ]]; then
+                found_fe_http_port_from_db=$line
+                break
+            fi
+        done <<< "$fe_info"
+        fe_http_port="$found_fe_http_port_from_db" # Set the port from DB if found
     fi
     
-    # 获取当前FE的IP和端口
-    fe_ip=""
-    fe_http_port=""
-    while read -r line; do
-        if [[ $line == $hostname ]]; then
-            fe_ip=$line
-        elif [[ -n $fe_ip && -z $fe_http_port ]]; then
-            fe_http_port=$line
-            break
-        fi
-    done <<< "$fe_info"
-    
-    echo $fe_ip,$fe_http_port
     # 从FE的varz获取meta_dir
     if [ ! -z "$fe_ip" ] && [ ! -z "$fe_http_port" ]; then
         if [[ -n $sr_password ]]; then
@@ -1077,6 +1084,7 @@ function check_fe_disk_space() {
 # 检查BE节点磁盘空间
 function check_be_disk_space() {
     local hostname=$1
+    local explicit_http_port=$2 # New optional argument
     local disk_info=""
     
     # 检查根目录
@@ -1085,24 +1093,31 @@ function check_be_disk_space() {
         disk_info="${disk_info}${root_space};"
     fi
     
-    # 从show backends获取BE的IP和HTTP端口
-    if [[ -n $sr_password ]]; then
-        be_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
-    else
-        be_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
-    fi
-    
-    # 获取当前BE的IP和端口
-    be_ip=""
-    be_http_port=""
-    while read -r line; do
-        if [[ $line == $hostname ]]; then
-            be_ip=$line
-        elif [[ -n $be_ip && -z $be_http_port ]]; then
-            be_http_port=$line
-            break
+    local be_ip=$hostname
+    local be_http_port="$explicit_http_port" # Use explicit port if provided
+
+    # If no explicit port was provided, and we are NOT in manual node list mode, then try to get from cluster
+    if [ -z "$be_http_port" ] && [[ -z "$node_list" ]]; then
+        # 从show backends获取BE的IP和HTTP端口
+        if [[ -n $sr_password ]]; then
+            be_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
+        else
+            be_info=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends\G" 2>/dev/null | grep -E "IP|HttpPort" | awk '{print $2}')
         fi
-    done <<< "$be_info"
+        
+        # 获取当前BE的IP和端口
+        local found_be_ip=""
+        local found_be_http_port_from_db=""
+        while read -r line; do
+            if [[ "$line" == "$hostname" ]]; then
+                found_be_ip=$line
+            elif [[ -n "$found_be_ip" && -z "$found_be_http_port_from_db" ]]; then
+                found_be_http_port_from_db=$line
+                break
+            fi
+        done <<< "$be_info"
+        be_http_port="$found_be_http_port_from_db" # Set the port from DB if found
+    fi
     
     # 从BE的varz获取storage_root_path
     if [ ! -z "$be_ip" ] && [ ! -z "$be_http_port" ]; then
