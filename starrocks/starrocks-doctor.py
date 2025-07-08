@@ -3,7 +3,7 @@ import argparse
 import json
 import csv
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 import mysql.connector
 from mysql.connector import Error
 
@@ -919,6 +919,307 @@ class StarRocksDoctor:
             print(f"Error getting BE stack trace: {e}")
             return {}
 
+    def check_empty_partitions(self, limit=100):
+        """检查数据为空的表或分区，按空分区个数倒序排序
+        
+        Args:
+            limit: 返回结果数量限制
+            
+        Returns:
+            list: 空分区信息列表
+        """
+        try:
+            query = """
+                SELECT 
+                    DB_NAME,
+                    TABLE_NAME,
+                    COUNT(*) as empty_partition_count,
+                    GROUP_CONCAT(PARTITION_NAME) as empty_partitions
+                FROM information_schema.partitions_meta
+                WHERE ROW_COUNT = 0 OR ROW_COUNT IS NULL
+                GROUP BY DB_NAME, TABLE_NAME
+                ORDER BY empty_partition_count DESC
+                LIMIT %s
+            """
+            return self.execute_query(query, (limit,))
+        except Exception as e:
+            print(f"Error checking empty partitions: {e}")
+            return []
+
+    def check_single_replica_tables(self):
+        """检查单副本的表
+        
+        Returns:
+            list: 单副本表信息列表
+        """
+        try:
+            query = """
+                SELECT 
+                    DB_NAME,
+                    TABLE_NAME,
+                    REPLICATION_NUM
+                FROM information_schema.partitions_meta
+                WHERE REPLICATION_NUM = 1
+                GROUP BY DB_NAME, TABLE_NAME, REPLICATION_NUM
+            """
+            return self.execute_query(query)
+        except Exception as e:
+            print(f"Error checking single replica tables: {e}")
+            return []
+
+    def check_single_bucket_large_tables(self, size_gb=1):
+        """检查单bucket且数据量超过指定大小的表或分区
+        
+        Args:
+            size_gb: 数据量阈值（GB）
+            
+        Returns:
+            list: 符合条件的表信息列表
+        """
+        try:
+            query = """
+                SELECT 
+                    DB_NAME,
+                    TABLE_NAME,
+                    PARTITION_NAME,
+                    BUCKETS,
+                    DATA_SIZE
+                FROM information_schema.partitions_meta
+                WHERE BUCKETS = 1
+                AND CAST(REGEXP_REPLACE(DATA_SIZE, '[^0-9.]', '') AS DECIMAL) > %s * 1024 * 1024 * 1024
+            """
+            return self.execute_query(query, (size_gb,))
+        except Exception as e:
+            print(f"Error checking single bucket large tables: {e}")
+            return []
+
+    def check_unpartitioned_large_tables(self, size_gb=50):
+        """检查未分区且数据量超过指定大小的表
+        
+        Args:
+            size_gb: 数据量阈值（GB）
+            
+        Returns:
+            list: 符合条件的表信息列表
+        """
+        try:
+            query = """
+                SELECT 
+                    t.DB_NAME,
+                    t.TABLE_NAME,
+                    SUM(CAST(REGEXP_REPLACE(p.DATA_SIZE, '[^0-9.]', '') AS DECIMAL)) as total_size
+                FROM information_schema.tables_config t
+                JOIN information_schema.partitions_meta p 
+                ON t.TABLE_SCHEMA = p.DB_NAME AND t.TABLE_NAME = p.TABLE_NAME
+                WHERE t.PARTITION_KEY IS NULL OR t.PARTITION_KEY = ''
+                GROUP BY t.DB_NAME, t.TABLE_NAME
+                HAVING total_size > %s * 1024 * 1024 * 1024
+            """
+            return self.execute_query(query, (size_gb,))
+        except Exception as e:
+            print(f"Error checking unpartitioned large tables: {e}")
+            return []
+
+    def check_tables_without_index_disk(self):
+        """检查没有开启索引落盘的表
+        
+        Returns:
+            list: 符合条件的表信息列表
+        """
+        try:
+            query = """
+                WITH TableDataSize AS (
+                    -- 计算每个表的数据大小
+                    SELECT
+                        pm.DB_NAME,
+                        pm.TABLE_NAME,
+                        COALESCE(SUM(tbt.DATA_SIZE), 0) / (1024 * 1024 * 1024) AS total_data_size_gb  -- 转换为 GB
+                    FROM
+                        information_schema.partitions_meta pm
+                    LEFT JOIN
+                        information_schema.be_tablets tbt ON pm.PARTITION_ID = tbt.PARTITION_ID
+                    GROUP BY
+                        pm.DB_NAME,
+                        pm.TABLE_NAME
+                )
+                SELECT
+                    tc.TABLE_SCHEMA AS "database_name",
+                    tc.TABLE_NAME AS "table_name",
+                    tc.properties,
+                    td.total_data_size_gb AS "data_size_gb",  -- 数据大小
+                    td.total_data_size_gb * 0.15 AS "estimated_memory_usage_gb"  -- 估算内存占用（假设为数据大小的 15%）
+                FROM
+                    information_schema.tables_config tc
+                LEFT JOIN
+                    TableDataSize td ON tc.TABLE_SCHEMA = td.DB_NAME AND tc.TABLE_NAME = td.TABLE_NAME
+                WHERE
+                    tc.table_model = "PRIMARY_KEYS"
+                    AND tc.properties LIKE '%enable_persistent_index":"false"%'
+                ORDER BY
+                    td.total_data_size_gb DESC
+            """
+            return self.execute_query(query)
+        except Exception as e:
+            print(f"Error checking tables without index disk: {e}")
+            return []
+
+    def check_large_tablets(self, size_gb=5):
+        """检查单个tablet数据量超过指定大小的表或分区
+        
+        Args:
+            size_gb: 数据量阈值（GB）
+            
+        Returns:
+            list: 符合条件的tablet信息列表
+        """
+        try:
+            # 首先尝试从 be_tablets 获取数据
+            query = """
+                SELECT 
+                    t.DB_NAME,
+                    t.TABLE_NAME,
+                    bt.TABLET_ID,
+                    bt.DATA_SIZE
+                FROM information_schema.be_tablets bt
+                JOIN information_schema.tables_config t 
+                ON bt.TABLE_ID = t.TABLE_ID
+                WHERE bt.DATA_SIZE > %s * 1024 * 1024 * 1024
+            """
+            result = self.execute_query(query, (size_gb,))
+            
+            if not result:
+                # 如果从 be_tablets 获取失败，尝试从 show tablet 获取
+                tables = self.execute_query("""
+                    SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME 
+                    FROM information_schema.tables_config
+                """)
+                
+                large_tablets = []
+                for table in tables:
+                    tablets = self.execute_query(f"SHOW TABLETS FROM `{table['TABLE_SCHEMA']}`.`{table['TABLE_NAME']}`")
+                    for tablet in tablets:
+                        if tablet.get('DataSize'):
+                            size = self._convert_to_mb(tablet['DataSize'])
+                            if size > size_gb * 1024:  # 转换为MB
+                                large_tablets.append({
+                                    'DB_NAME': table['TABLE_SCHEMA'],
+                                    'TABLE_NAME': table['TABLE_NAME'],
+                                    'TABLET_ID': tablet['TabletId'],
+                                    'DATA_SIZE': tablet['DataSize']
+                                })
+                return large_tablets
+                
+            return result
+        except Exception as e:
+            print(f"Error checking large tablets: {e}")
+            return []
+
+    def check_tablets_with_many_versions(self, version_threshold=900):
+        """检查tablet版本个数超过阈值的tablet
+        
+        Args:
+            version_threshold: 版本数阈值
+            
+        Returns:
+            list: 符合条件的tablet信息列表
+        """
+        try:
+            query = """
+                SELECT 
+                    t.DB_NAME,
+                    t.TABLE_NAME,
+                    bt.TABLET_ID,
+                    bt.NUM_ROWSET
+                FROM information_schema.be_tablets bt
+                JOIN information_schema.tables_config t 
+                ON bt.TABLE_ID = t.TABLE_ID
+                WHERE bt.NUM_ROWSET > %s
+            """
+            return self.execute_query(query, (version_threshold,))
+        except Exception as e:
+            print(f"Error checking tablets with many versions: {e}")
+            return []
+
+    def check_small_tablets(self, size_mb=500, limit=100):
+        """检查单个tablet数据量小于指定大小的表或分区，按tablet个数排序
+        
+        Args:
+            size_mb: 数据量阈值（MB）
+            limit: 返回结果数量限制
+            
+        Returns:
+            list: 符合条件的表信息列表
+        """
+        try:
+            # 首先尝试从 be_tablets 获取数据
+            query = """
+                SELECT 
+                    t.DB_NAME,
+                    t.TABLE_NAME,
+                    COUNT(*) as small_tablet_count,
+                    GROUP_CONCAT(bt.TABLET_ID) as tablet_ids
+                FROM information_schema.be_tablets bt
+                JOIN information_schema.tables_config t 
+                ON bt.TABLE_ID = t.TABLE_ID
+                WHERE bt.DATA_SIZE < %s * 1024 * 1024
+                GROUP BY t.DB_NAME, t.TABLE_NAME
+                ORDER BY small_tablet_count DESC
+                LIMIT %s
+            """
+            result = self.execute_query(query, (size_mb, limit))
+            
+            if not result:
+                # 如果从 be_tablets 获取失败，尝试从 show tablet 获取
+                tables = self.execute_query("""
+                    SELECT DISTINCT TABLE_SCHEMA, TABLE_NAME 
+                    FROM information_schema.tables_config
+                """)
+                
+                small_tablets = {}
+                for table in tables:
+                    tablets = self.execute_query(f"SHOW TABLETS FROM `{table['TABLE_SCHEMA']}`.`{table['TABLE_NAME']}`")
+                    small_count = 0
+                    tablet_ids = []
+                    
+                    for tablet in tablets:
+                        if tablet.get('DataSize'):
+                            size = self._convert_to_mb(tablet['DataSize'])
+                            if size < size_mb:
+                                small_count += 1
+                                tablet_ids.append(tablet['TabletId'])
+                    
+                    if small_count > 0:
+                        small_tablets[f"{table['TABLE_SCHEMA']}.{table['TABLE_NAME']}"] = {
+                            'DB_NAME': table['TABLE_SCHEMA'],
+                            'TABLE_NAME': table['TABLE_NAME'],
+                            'small_tablet_count': small_count,
+                            'tablet_ids': ','.join(map(str, tablet_ids))
+                        }
+                
+                # 按small_tablet_count排序并返回前limit个结果
+                return sorted(small_tablets.values(), key=lambda x: x['small_tablet_count'], reverse=True)[:limit]
+                
+            return result
+        except Exception as e:
+            print(f"Error checking small tablets: {e}")
+            return []
+
+    def get_yesterdays_tables(self):
+        """获取昨天新建的表信息"""
+        try:
+            # 获取昨天的日期字符串
+            yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+            today = datetime.now().strftime('%Y-%m-%d')
+            query = f"""
+                SELECT TABLE_CATALOG, TABLE_SCHEMA, TABLE_NAME, TABLE_TYPE, ENGINE, TABLE_ROWS, DATA_LENGTH, CREATE_TIME
+                FROM information_schema.tables
+                WHERE CREATE_TIME >= '{yesterday} 00:00:00' AND CREATE_TIME < '{today} 00:00:00'
+            """
+            return self.execute_query(query)
+        except Exception as e:
+            print(f"Error getting yesterday's tables: {e}")
+            return []
+
 def main():
     parser = argparse.ArgumentParser(description='CelerData Diagnostic Tool')
     parser.add_argument('--host', required=True, help='FE hostname or endpoint')
@@ -928,11 +1229,14 @@ def main():
     parser.add_argument('--output', default='./starrocks_diagnostic', help='Output directory')
     parser.add_argument('--format', choices=['json', 'csv', 'yaml', 'txt'], default='json',
                       help='Output format (default: json)')
-    parser.add_argument('--module', choices=['schema', 'mv', 'tablet', 'check_replica', 'session_vars', 'be_config', 'fe_config', 'all_configs', 'backend_mapping', 'cluster_state', 'performance_diagnostics', 'query_dump', 'be_stack'], required=True, 
-                      help='Module to run: schema (table schema and ID), mv (materialized views), tablet (tablet metadata), check_replica (check and set bad replica), session_vars (modified session variables), be_config (modified BE configurations), fe_config (FE configurations), all_configs (all configurations), backend_mapping (backend host to id mapping), cluster_state (cluster state and configuration), performance_diagnostics (query performance diagnostics), query_dump (get query dump from SQL file), be_stack (get BE stack trace)')
+    parser.add_argument('--module', choices=['schema', 'mv', 'tablet', 'check_replica', 'session_vars', 'be_config', 'fe_config', 'all_configs', 'backend_mapping', 'cluster_state', 'performance_diagnostics', 'query_dump', 'be_stack', 'yesterdays_tables'], required=True, 
+                      help='Module to run: schema (table schema and ID), mv (materialized views), tablet (tablet metadata), check_replica (check and set bad replica), session_vars (modified session variables), be_config (modified BE configurations), fe_config (FE configurations), all_configs (all configurations), backend_mapping (backend host to id mapping), cluster_state (cluster state and configuration), performance_diagnostics (query performance diagnostics), query_dump (get query dump from SQL file), be_stack (get BE stack trace), yesterdays_tables (tables created yesterday)')
     parser.add_argument('--name', help='Optional. Table name, MV name, tablet ID or replica ID to collect info for')
     parser.add_argument('--sql_file', help='Path to SQL file for query_dump module')
     parser.add_argument('--be_ip', help='BE IP address for be_stack module')
+    parser.add_argument('--size_gb', type=float, help='Size threshold in GB for large tablets check')
+    parser.add_argument('--size_mb', type=float, help='Size threshold in MB for small tablets check')
+    parser.add_argument('--version_threshold', type=int, default=900, help='Version threshold for tablets with many versions check')
 
     args = parser.parse_args()
 
@@ -955,7 +1259,19 @@ def main():
             result = doctor.collect_mv_info(args.name)
             doctor.save_to_file(result, 'materialized_view_info', args.format)
         elif args.module == 'tablet':
-            result = doctor.collect_tablet_metadata(args.name)
+            if args.name:
+                result = doctor.collect_tablet_metadata(args.name)
+            else:
+                result = {
+                    'empty_partitions': doctor.check_empty_partitions(),
+                    'single_replica_tables': doctor.check_single_replica_tables(),
+                    'single_bucket_large_tables': doctor.check_single_bucket_large_tables(),
+                    'unpartitioned_large_tables': doctor.check_unpartitioned_large_tables(),
+                    'tables_without_index_disk': doctor.check_tables_without_index_disk(),
+                    'large_tablets': doctor.check_large_tablets(args.size_gb or 5),
+                    'tablets_with_many_versions': doctor.check_tablets_with_many_versions(args.version_threshold),
+                    'small_tablets': doctor.check_small_tablets(args.size_mb or 500)
+                }
             doctor.save_to_file(result, 'tablet_metadata', args.format)
         elif args.module == 'check_replica':
             if not args.name:
@@ -995,6 +1311,9 @@ def main():
                 return
             result = doctor.get_be_stack_trace(args.be_ip)
             doctor.save_to_file(result, 'be_stack_trace', args.format)
+        elif args.module == 'yesterdays_tables':
+            result = doctor.get_yesterdays_tables()
+            doctor.save_to_file(result, 'yesterdays_tables', args.format)
 
         print(f"Diagnostic data collection complete. Files saved to {args.output}")
     finally:
