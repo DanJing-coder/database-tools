@@ -4,6 +4,8 @@ import json
 import csv
 import time
 from datetime import datetime, timedelta
+import re
+import subprocess
 import mysql.connector
 from mysql.connector import Error
 
@@ -57,6 +59,15 @@ class StarRocksDoctor:
             if fe['Role'] == 'LEADER':
                 return fe['IP']
         return None
+    
+    def get_fes(self):
+        """Get all FE"""
+        fes = []
+        fe_instances = self.execute_query("show frontends")
+        for fe in fe_instances:
+            fes.append(fe['IP'])
+        return fes
+
 
     def collect_cluster_state(self):
         """Collect cluster state and configuration"""
@@ -688,6 +699,7 @@ class StarRocksDoctor:
                 self.connection.close()
             self.host = leader_fe
             if not self.connect():
+                print("Error: Could not connect leader FE")
                 return {}
 
             # Get session variables
@@ -847,10 +859,11 @@ class StarRocksDoctor:
             # Create mapping
             host_id_mapping = {}
             for backend in backends:
-                host = backend.get('Host')
+                host = backend.get('IP')
                 backend_id = backend.get('BackendId')
                 if host and backend_id:
                     host_id_mapping[host] = backend_id
+            print(f"Backend host-id mapping: {host_id_mapping}")
 
             return host_id_mapping
 
@@ -1220,8 +1233,326 @@ class StarRocksDoctor:
             print(f"Error getting yesterday's tables: {e}")
             return []
 
+
+    def get_fe_log_paths(self):
+        """Get log paths for all FE nodes"""
+        try:
+            fe_nodes = self.execute_query("SHOW PROC '/frontends'")
+            if not fe_nodes:
+                print("Error: Could not get FE nodes information")
+                return {}
+
+            log_paths = {}
+            original_host = self.host
+
+            for fe in fe_nodes:
+                fe_host = fe['IP']
+                try:
+                    if self.connection and self.connection.is_connected():
+                        self.connection.close()
+                    self.host = fe_host
+                    if not self.connect():
+                        print(f"Warning: Could not connect to FE {fe_host}:{self.port}")
+                        log_paths[fe_host] = "Connection Failed"
+                        continue
+
+                    query = "ADMIN SHOW FRONTEND CONFIG LIKE 'sys_log_dir'"
+                    log_config = self.execute_query(query)
+                    if log_config:
+                        log_paths[fe_host] = log_config[0]['Value']
+                    else:
+                        log_paths[fe_host] = "Not Found"
+
+                except Error as e:
+                    print(f"Error collecting log path from FE {fe_host}: {e}")
+                    log_paths[fe_host] = f"Error: {e}"
+                finally:
+                    if self.connection and self.connection.is_connected():
+                        self.connection.close()
+
+            # Restore original connection
+            self.host = original_host
+            if not self.connect():
+                print("Error: Could not restore connection to original FE")
+
+            return log_paths
+        except Error as e:
+            print(f"Error getting FE log paths: {e}")
+            return {}
+
+    def get_be_log_paths(self):
+        """Get log paths for all BE nodes"""
+        try:
+            query = "select BE_ID, VALUE from information_schema.be_configs where NAME = 'sys_log_dir'"
+            results = self.execute_query(query)
+            if results is None:
+                print("Could not retrieve BE log paths.")
+                return {}
+
+            host_id_mapping = self.get_backend_host_id_mapping()
+            id_host_mapping = {v: k for k, v in host_id_mapping.items()}
+
+            log_paths = {}
+            for row in results:
+                be_id = str(row['BE_ID'])
+                log_path = row['VALUE']
+                be_ip = id_host_mapping.get(be_id, f"Unknown BE ID: {be_id}")
+                log_paths[be_ip] = log_path
+            print(f"BE log paths: {log_paths}")
+
+            return log_paths
+        except Error as e:
+            print(f"Error getting BE log paths: {e}")
+            return {}
+
+    def check_manager_logs(self):
+        """Check manager logs for errors"""
+        try:
+            # Find the manager directory by inspecting the drms process
+            command = "ps aux | grep '[d]rms'"
+            # Using text=True for Python 3.7+
+            result = subprocess.run(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, check=False)
+
+            if result.returncode != 0 or not result.stdout:
+                return "Manager 'drms' process not found."
+
+            process_line = result.stdout.strip().split('\n')[0]
+
+            # The command can have spaces. `ps aux` format: USER PID %CPU %MEM VSZ RSS TTY STAT START TIME COMMAND
+            # The command starts at column 11.
+            parts = process_line.split(None, 10)
+            if len(parts) < 11:
+                return f"Could not parse 'ps' output for drms process: {process_line}"
+
+            command_full = parts[10]
+
+            manager_dir = None
+            # Try to extract from executable path first
+            # e.g., /home/disk1/manager-20250113/center/lib/web/drms
+            executable_path = command_full.split()[0]
+            match = re.search(r'(.*/center)/lib/web/drms', executable_path)
+            if match:
+                manager_dir = match.group(1)
+            else:
+                # If not found, try to extract from --log_dir argument
+                # e.g., --log_dir=/home/disk1/manager-20250113/center/log/web
+                match = re.search(r'--log_dir=([^\s]+)', command_full)
+                if match:
+                    log_dir = match.group(1)
+                    # manager_dir is two levels up from log_dir
+                    center_dir = os.path.dirname(os.path.dirname(log_dir))
+                    if os.path.basename(center_dir) == 'center':
+                        manager_dir = center_dir
+
+            if not manager_dir or not os.path.isdir(manager_dir):
+                return f"Manager directory not found or is not a directory. Determined path: {manager_dir}. Process info: {command_full}"
+
+            # Use the same output directory structure as remote_diagnostics
+            run_output_dir = os.path.join(self.output_dir, f"remote_diagnostics_{self.timestamp}")
+            output_dir = os.path.join(run_output_dir, "manager_logs")
+            os.makedirs(output_dir, exist_ok=True)
+
+            drms_warning_cmd = f"grep -E 'E[0-9]{{4,}}' {manager_dir}/log/web/drms.WARNING > {output_dir}/drms.WARNING"
+            center_service_warning_cmd = f"grep -E 'E[0-9]{{4,}}' {manager_dir}/log/center-service/center_service.WARNING > {output_dir}/center_service.WARNING"
+
+            os.system(drms_warning_cmd)
+            os.system(center_service_warning_cmd)
+
+            return f"Manager logs checked. Output saved in {output_dir}"
+        except Exception as e:
+            return f"Error checking manager logs: {e}"
+
+    def get_proc_statistic(self):
+        """Get SHOW PROC '/statistic' result"""
+        results = self.execute_query("SHOW PROC '/statistic'")
+        if not results:
+            return {}
+
+        processed_stats = {}
+        for row in results:
+            db_name = row.get('DbName')
+            if not db_name:
+                continue
+
+            # Basic statistics for each database
+            db_stats = {
+                'DbId': row.get('DbId'),
+                'TableNum': row.get('TableNum'),
+                'PartitionNum': row.get('PartitionNum'),
+                'IndexNum': row.get('IndexNum'),
+                'TabletNum': row.get('TabletNum'),
+                'ReplicaNum': row.get('ReplicaNum'),
+            }
+
+            # Fields to check for non-zero values
+            unhealthy_fields = [
+                'UnhealthyTabletNum',
+                'InconsistentTabletNum',
+                'CloningTabletNum',
+                'ErrorStateTabletNum'
+            ]
+
+            for field in unhealthy_fields:
+                value = row.get(field)
+                if value and int(value) > 0:
+                    db_stats[field] = value
+            
+            processed_stats[db_name] = db_stats
+
+        return processed_stats
+
+    def _fetch_remote_file(self, ip, ssh_port, remote_path, local_path):
+        """Helper to fetch a single file using scp."""
+        try:
+            print(f"  Fetching {remote_path} from {ip} to {local_path}")
+            command = [
+                'scp', '-P', str(ssh_port),
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'UserKnownHostsFile=/dev/null',
+                f'{ip}:{remote_path}',
+                local_path
+            ]
+            subprocess.run(command, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=60)
+            return True
+        except subprocess.CalledProcessError as e:
+            print(f"  Could not fetch {remote_path} with scp: {e.stderr}")
+            return False
+        except Exception as e:
+            print(f"  An error occurred while fetching {remote_path}: {e}")
+            return False
+
+
+    def _execute_remote_cmd_and_save_output(self, ip, ssh_port, cmd, local_path):
+        """Executes a command on the remote host and saves stdout to a local file."""
+        try:
+            print(f"  Executing remote command on {ip}: {cmd}")
+            ssh_command = [
+                'ssh', '-p', str(ssh_port),
+                '-o', 'StrictHostKeyChecking=no',
+                '-o', 'UserKnownHostsFile=/dev/null',
+                ip,
+                cmd
+            ]
+            result = subprocess.run(ssh_command, check=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, timeout=30)
+            output = result.stdout
+            error = result.stderr
+
+            # Log stderr unless it's a "file not found" error, which is common
+            if error and "No such file or directory" not in error:
+                print(f"  Stderr from remote command: {error.strip()}")
+
+            with open(local_path, 'w', encoding='utf-8') as f:
+                f.write(output)
+
+            print(f"  Saved output to {local_path}")
+            return True
+        except Exception as e:
+            print(f"  Failed to execute remote command on {ip} '{cmd}': {e}")
+            return False
+
+    def collect_data_from_all_nodes(self, ssh_port=22, fe_http_port=8030, be_http_port=8040):
+        """
+        Collects diagnostic data from all FE and BE nodes via SSH.
+        This includes log files, configuration files, and system files.
+        """
+        all_nodes = {}
+        try:
+            fe_nodes = self.get_fes()
+            be_nodes = list(self.get_backend_host_id_mapping().keys())
+        except Exception as e:
+            print(f"Error getting node list: {e}. Please ensure the initial connection is to a valid FE.")
+            return {}
+        
+        print(f"FE nodes: {fe_nodes}")
+        print(f"BE nodes: {be_nodes}")
+
+        for ip in fe_nodes:
+            all_nodes[ip] = 'fe'
+        for ip in be_nodes:
+            # A node can be both FE and BE
+            if ip not in all_nodes:
+                all_nodes[ip] = 'be'
+
+        all_results = {}
+        
+        # Create a main directory for this run
+        run_output_dir = os.path.join(self.output_dir, f"remote_diagnostics_{self.timestamp}")
+        os.makedirs(run_output_dir, exist_ok=True)
+        print(f"Saving remote diagnostics to: {run_output_dir}")
+
+        fes_log_dir = self.get_fe_log_paths()
+        bes_log_dir = self.get_be_log_paths()
+
+        for ip, role in all_nodes.items():
+            print(f"\nCollecting data from {role} node: {ip}...")
+            node_results = {}
+            try:
+                # 1. Get log and conf directories
+                log_dir = None
+                conf_dir = None
+                if role == "fe":
+                    log_dir = fes_log_dir[ip]
+                else:
+                    log_dir = bes_log_dir[ip]
+
+                if log_dir:
+                    conf_dir = os.path.join(os.path.dirname(log_dir), 'conf')
+                    node_results['log_dir'] = log_dir
+                    node_results['conf_dir'] = conf_dir
+                else:
+                    print(f"  Could not determine log directory for {ip}.")
+
+                # 2. Fetch files
+                node_output_dir = os.path.join(run_output_dir, f"{ip}_{role}")
+                os.makedirs(node_output_dir, exist_ok=True)
+
+                self._fetch_remote_file(ip, ssh_port, '/etc/hosts', os.path.join(node_output_dir, 'hosts.txt'))
+                self._fetch_remote_file(ip, ssh_port, '/etc/fstab', os.path.join(node_output_dir, 'fstab.txt'))
+
+                if conf_dir:
+                    self._fetch_remote_file(ip, ssh_port, os.path.join(conf_dir, f'{role}.conf'), os.path.join(node_output_dir, f'{role}.conf'))
+
+
+
+                # 3. Execute remote checks and save filtered logs
+                if log_dir:
+                    if role == 'fe':
+                        # check_fe_logs
+                        log_file = os.path.join(log_dir, 'fe.warn.log')
+                        output_file = os.path.join(node_output_dir, "fe_warn_filtered.log")
+                        cmd = f"grep -i -E 'error|exception' {log_file}"
+                        self._execute_remote_cmd_and_save_output(ip, ssh_port, cmd, output_file)
+                    else: # be
+                        # check_be_out
+                        log_file = os.path.join(log_dir, 'be.out')
+                        output_file = os.path.join(node_output_dir, "be_out_filtered.log")
+                        cmd = f"sed -n '/3.3.14-ee RELEASE (build 5b29ea9)/,/start time/p' {log_file}"
+                        self._execute_remote_cmd_and_save_output(ip, ssh_port, cmd, output_file)
+
+                        # check_be_warning_logs
+                        log_file = os.path.join(log_dir, 'be.WARNING')
+                        output_file = os.path.join(node_output_dir, "be_warning_filtered.log")
+                        cmd = f"grep -i -E 'error|fail' {log_file}"
+                        self._execute_remote_cmd_and_save_output(ip, ssh_port, cmd, output_file)
+
+                        # check_task_queue
+                        log_file = os.path.join(log_dir, 'be.INFO')
+                        output_file = os.path.join(node_output_dir, "task_queue_filtered.log")
+                        cmd = f"grep -E 'task_count_in_queue=[2-9][0-9]{{4,}}' {log_file}"
+                        self._execute_remote_cmd_and_save_output(ip, ssh_port, cmd, output_file)
+                
+                node_results['status'] = 'Success'
+                node_results['collected_files_path'] = node_output_dir
+                all_results[ip] = node_results
+
+            except Exception as e:
+                print(f"Failed to collect data from {ip}: {e}")
+                all_results[ip] = {'status': 'Failed', 'error': str(e)}
+        
+        return all_results
+
 def main():
-    parser = argparse.ArgumentParser(description='CelerData Diagnostic Tool')
+    parser = argparse.ArgumentParser(description='StarRocks Diagnostic Tool')
     parser.add_argument('--host', required=True, help='FE hostname or endpoint')
     parser.add_argument('--port', type=int, default=9030, help='FE port (default: 9030)')
     parser.add_argument('--user', required=True, help='Username')
@@ -1229,14 +1560,15 @@ def main():
     parser.add_argument('--output', default='./starrocks_diagnostic', help='Output directory')
     parser.add_argument('--format', choices=['json', 'csv', 'yaml', 'txt'], default='json',
                       help='Output format (default: json)')
-    parser.add_argument('--module', choices=['schema', 'mv', 'tablet', 'check_replica', 'session_vars', 'be_config', 'fe_config', 'all_configs', 'backend_mapping', 'cluster_state', 'performance_diagnostics', 'query_dump', 'be_stack', 'yesterdays_tables'], required=True, 
-                      help='Module to run: schema (table schema and ID), mv (materialized views), tablet (tablet metadata), check_replica (check and set bad replica), session_vars (modified session variables), be_config (modified BE configurations), fe_config (FE configurations), all_configs (all configurations), backend_mapping (backend host to id mapping), cluster_state (cluster state and configuration), performance_diagnostics (query performance diagnostics), query_dump (get query dump from SQL file), be_stack (get BE stack trace), yesterdays_tables (tables created yesterday)')
+    parser.add_argument('--module', choices=['schema', 'mv', 'tablet', 'check_replica', 'session_vars', 'be_config', 'fe_config', 'all_configs', 'backend_mapping', 'cluster_state', 'performance_diagnostics', 'query_dump', 'be_stack', 'yesterdays_tables', 'log_paths', 'remote_diagnostics'], required=True, 
+                      help='Module to run: schema, mv, tablet, check_replica, session_vars, be_config, fe_config, all_configs, backend_mapping, cluster_state, performance_diagnostics, query_dump, be_stack, yesterdays_tables, log_paths, remote_diagnostics (collect logs/confs from all nodes via SSH)')
     parser.add_argument('--name', help='Optional. Table name, MV name, tablet ID or replica ID to collect info for')
     parser.add_argument('--sql_file', help='Path to SQL file for query_dump module')
     parser.add_argument('--be_ip', help='BE IP address for be_stack module')
     parser.add_argument('--size_gb', type=float, help='Size threshold in GB for large tablets check')
     parser.add_argument('--size_mb', type=float, help='Size threshold in MB for small tablets check')
     parser.add_argument('--version_threshold', type=int, default=900, help='Version threshold for tablets with many versions check')
+    parser.add_argument('--ssh_port', type=int, default=22, help='SSH port (default: 22)')
 
     args = parser.parse_args()
 
@@ -1314,6 +1646,16 @@ def main():
         elif args.module == 'yesterdays_tables':
             result = doctor.get_yesterdays_tables()
             doctor.save_to_file(result, 'yesterdays_tables', args.format)
+        elif args.module == 'remote_diagnostics':
+            # Run local manager check first
+            manager_log_result = doctor.check_manager_logs()
+            print(manager_log_result)
+
+            # Then collect data from all nodes
+            result = doctor.collect_data_from_all_nodes(
+                ssh_port=args.ssh_port
+            )
+            doctor.save_to_file(result, 'remote_diagnostics_summary', args.format)
 
         print(f"Diagnostic data collection complete. Files saved to {args.output}")
     finally:
