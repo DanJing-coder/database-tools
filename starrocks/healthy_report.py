@@ -12,8 +12,8 @@ import yaml
 from datetime import datetime
 import os
 
-np.seterr(invalid='ignore')
 RUN_MODE = "shared_nothing"
+np.seterr(invalid='ignore')
 
 class DbHandler:
     def __init__(self, user, passwd="", db="", host="localhost", port=9030):
@@ -60,7 +60,11 @@ class DbHandler:
                 fields = self.cursor.description
                 return fields, data
             except Exception as e:
-                print(f"Query failed: {e}")
+                # 检查是否是“表不存在”的错误
+                if "Unknown table" in str(e) or "doesn't exist" in str(e):
+                    print(f"\033[33m[Warning] Query failed because table does not exist: {e}\033[0m")
+                else:
+                    print(f"Query failed: {e}")
                 return None, None
 
     def format(self, fields, result):
@@ -119,7 +123,13 @@ class BaseCheck:
         """Get tables for specified databases"""
         valid_tables = {}
         dbs_sets = self.get_all_dbs()
-        valid_dbs = databases if databases else dbs_sets.keys()
+        
+        # 在 shared_nothing 模式下，总是扫描所有数据库，忽略 databases 参数
+        # 在 shared_data 模式下，如果指定了 databases，则只扫描指定的库
+        if self.mode == "shared_nothing" or not databases:
+            valid_dbs = dbs_sets.keys()
+        else: # shared_data 模式且指定了 databases
+            valid_dbs = databases
 
         for db in valid_dbs:
             if db in self.table_black_list or db not in dbs_sets:
@@ -147,7 +157,7 @@ class BaseCheck:
 
         fields, result = self.db.query(sql)
         if not result:
-            return None
+            return None # 表不存在或没有分区
 
         info = {
             "replica_counts": 0,
@@ -188,7 +198,7 @@ class BaseCheck:
 
         fields, result = self.db.query(sql)
         if not result:
-            return np.array([])
+            return None # 表不存在
 
         tablet_list = [
             self.convert_size(line['DataSize']) 
@@ -196,7 +206,7 @@ class BaseCheck:
             if self.convert_size(line['DataSize']) > 0
         ]
         return np.array(tablet_list) if tablet_list else np.array([])
-
+    
     def get_table_schema(self, db, table, debug):
         """Get table schema"""
         sql = f"show create table `{db}`.`{table}`;"
@@ -206,10 +216,10 @@ class BaseCheck:
         fields, result = self.db.query(sql)
         return result[0] if result else None
 
-    def replica_healthy(self, replica, bucket, debug):
+    def replica_healthy(self, replica, bucket, debug, databases=None):
         """Check replica health status"""
         tables_info = []
-        db_tables = self.get_db_tables([])
+        db_tables = self.get_db_tables(databases)
         
         for count, (db, tables) in enumerate(db_tables.items(), 1):
             if count != len(db_tables):
@@ -221,7 +231,7 @@ class BaseCheck:
 
                 table_info = self.get_table_info(db, table, replica, bucket, debug)
                 if not table_info or not table_info["replica_counts"]:
-                    continue
+                    continue # 如果表信息为空（可能表不存在或无分区），则跳过
 
                 schema = False
                 table_schema = self.get_table_schema(db, table, debug)
@@ -230,6 +240,10 @@ class BaseCheck:
                                           table_schema[-1], re.M | re.I))
 
                 tablet_array = self.get_tablet_info(db, table, debug)
+                # 如果 get_tablet_info 返回 None (表不存在), 创建一个空数组以避免后续操作失败
+                if tablet_array is None:
+                    tablet_array = np.array([])
+
                 sqrt = 0.0
                 if not (table_info["replica_counts"] == 1 or 
                        tablet_array.shape in ((0,), (1,))):
@@ -237,7 +251,6 @@ class BaseCheck:
 
                 # 保留原始的 replica_partitions，不去掉空分区
                 replica_partitions = table_info["replica_partition"]
-                print(round(table_info["data_size"]/1024/1024, 2))
 
 
                 tables_info.append({
@@ -255,11 +268,8 @@ class BaseCheck:
 
         return tables_info
 
-def get_tables_info(host, port, user, password, mode, replica, bucket, debug):
+def get_tables_info(host, port, user, password, mode, replica, bucket, debug, databases=None):
     """Get tables information using provided connection parameters"""
-    if mode != "shared_nothing":
-        global RUN_MODE
-        RUN_MODE = "shared_data"
 
     base_check = BaseCheck(
         user=user,
@@ -269,7 +279,7 @@ def get_tables_info(host, port, user, password, mode, replica, bucket, debug):
         passwd=password,
         mode=mode
     )
-    return base_check.replica_healthy(replica, bucket, debug)
+    return base_check.replica_healthy(replica, bucket, debug, databases=databases)
 
 def format_tables_to_json(tables):
     """Convert tables data to JSON format"""
@@ -284,7 +294,7 @@ def format_tables_to_table(tables):
     table_format = PrettyTable([
         'database_name', 'table_name', 'datasize of table(/MB)',
         'replica_counts', 'avg of tablet datasize(/MB)',
-        'standard deviation of tablet datasize', 'empty partition tablets count'
+        'standard deviation of tablet datasize', 'empty partition count'
     ])
     
     for table in sorted(tables, key=lambda i: (i['replica_counts'], i['db_name'], i['tb_name']), reverse=True):
@@ -446,6 +456,8 @@ def main():
                       help='Output format')
     parser.add_argument('--output-dir', type=str, default='./reports',
                       help='Output directory for reports')
+    parser.add_argument('--databases', type=str,
+                    help='Comma-separated list of databases to check (e.g., db1,db2)')
     args = parser.parse_args()
 
     try:
@@ -457,7 +469,8 @@ def main():
             mode=args.mode,
             replica=args.replica,
             bucket=args.bucket,
-            debug=args.debug
+            debug=args.debug,
+            databases=args.databases.split(',') if hasattr(args, 'databases') and args.databases else None
         )
 
         if args.module in ("all", "tablets"):
