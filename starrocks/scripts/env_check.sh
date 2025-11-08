@@ -86,6 +86,12 @@ function echo_color() {
     fi
 }
 
+# 从字符串中提取IP地址，支持格式如192.168.100.111或192.168.100.111_9010_12331212979421794
+function extract_ip() {
+    # 使用正则表达式匹配IP地址部分
+    echo "$1" | sed -E 's/^([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}).*/\1/'
+}
+
 # 输出表格
 function echo_table() {
     # 设置列分隔符和表格边界符
@@ -124,19 +130,23 @@ if [[ ! -n $node_list ]]; then
     # be 所在列,默认取第二列
     if [[ $checkBeIpCol == "default_cluster" ]]; then
         if [[ -n $sr_password ]]; then
-            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends;" 2>/dev/null | awk 'NR!=1{print $2}')
-            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends;" 2>/dev/null | awk 'NR!=1{print $3}')
+            # 提取IP地址部分
+            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends;" 2>/dev/null | awk 'NR!=1{print $2}' | while read ip_str; do extract_ip "$ip_str"; done)
+            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends;" 2>/dev/null | awk 'NR!=1{print $3}' | while read ip_str; do extract_ip "$ip_str"; done)
         else
-            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends;" | awk 'NR!=1{print $2}')
-            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends;" | awk 'NR!=1{print $3}')
+            # 提取IP地址部分
+            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends;" | awk 'NR!=1{print $2}' | while read ip_str; do extract_ip "$ip_str"; done)
+            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends;" | awk 'NR!=1{print $3}' | while read ip_str; do extract_ip "$ip_str"; done)
         fi
     else
         if [[ -n $sr_password ]]; then
-            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends;" 2>/dev/null | awk 'NR!=1{print $2}')
-            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends;" 2>/dev/null | awk 'NR!=1{print $2}')
+            # 提取IP地址部分
+            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show frontends;" 2>/dev/null | awk 'NR!=1{print $2}' | while read ip_str; do extract_ip "$ip_str"; done)
+            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -p${sr_password} -e "show backends;" 2>/dev/null | awk 'NR!=1{print $2}' | while read ip_str; do extract_ip "$ip_str"; done)
         else 
-            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends;" | awk 'NR!=1{print $2}')
-            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends;" | awk 'NR!=1{print $2}')
+            # 提取IP地址部分
+            feIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show frontends;" | awk 'NR!=1{print $2}' | while read ip_str; do extract_ip "$ip_str"; done)
+            beIps=$(mysql -h ${host} -u ${sr_user} -P ${port} -e "show backends;" | awk 'NR!=1{print $2}' | while read ip_str; do extract_ip "$ip_str"; done)
         fi
     fi
     # 如果根据输入的集群信息没有查询到结果，提示用户检查
