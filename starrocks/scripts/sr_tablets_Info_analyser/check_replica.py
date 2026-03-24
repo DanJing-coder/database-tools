@@ -9,6 +9,9 @@ from prettytable import PrettyTable
 from contextlib import contextmanager
 import json
 
+# 脚本的功能是分析StarRocks集群中各库表的健康度，主要通过SHOW PARTITIONS和SHOW TABLET命令获取分区和Tablet的统计信息，
+# 计算每个表的总大小、分区数、副本数、平均Tablet大小和倾斜度（标准差）。支持按数据库过滤和输出格式选择（表格或JSON）。
+
 # 设置 numpy 忽略无效警告
 np.seterr(invalid='ignore')
 

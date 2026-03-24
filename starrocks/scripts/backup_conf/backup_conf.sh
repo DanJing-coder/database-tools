@@ -1,4 +1,7 @@
 #!/bin/bash
+# 脚本功能是备份StarRocks FE、BE或Broker节点的配置文件到与原conf同级目录下
+# 备份目录名为conf_backup_YYYYMMDD格式。支持单个节点或多个节点（通过文件或逗号分隔）。
+# 脚本会检查节点免密连接和安装路径的有效性，并提供彩色输出提示。
 
 # 彩色输出函数
 echo_color() {
