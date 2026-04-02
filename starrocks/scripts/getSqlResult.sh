@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # 数据库配置
-DB_HOST="dwh-dbr16-lp2"
-DB_USER="jing_d"
-DB_PASSWORD="dwukiRP2MBMn"
+DB_HOST=""
+DB_USER=""
+DB_PASSWORD=""
 DB_PORT="9030"
 
 # 默认配置
