@@ -805,66 +805,66 @@ function change_limit() {
     sshUpdate "$host" 'ulimit -n 655350'
     sshUpdate "$host" 'ulimit -u 65535'
     # 在文件 /etc/security/limits.conf 添加配置
-    if [[ -z $(sshcheck "$host" 'grep "^*.*soft.*nproc" /etc/security/limits.conf') ]]; then
+    # 使用 sed 直接删除旧行再追加，避免 grep/sed 正则 ^* 的歧义以及空格/Tab混用匹配不上的问题
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+soft[[:space:]]+nproc" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* soft nproc 65535" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *soft *nproc.*/* soft nproc 65535/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+soft[[:space:]]\+nproc\b.*/\* soft nproc 65535/" /etc/security/limits.conf'
     fi
 
-    if [[ -z $(sshcheck "$host" 'grep "^*.*hard.*nproc" /etc/security/limits.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+hard[[:space:]]+nproc" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* hard nproc 65535" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *hard *nproc.*/* hard nproc 65535/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+hard[[:space:]]\+nproc\b.*/\* hard nproc 65535/" /etc/security/limits.conf'
     fi
 
-    if [[ -z $(sshcheck "$host" 'grep "^*.*soft.*nofile" /etc/security/limits.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+soft[[:space:]]+nofile" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* soft nofile 655350" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *soft *nofile.*/* soft nofile 655350/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+soft[[:space:]]\+nofile\b.*/\* soft nofile 655350/" /etc/security/limits.conf'
     fi
 
-    if [[ -z $(sshcheck "$host" 'grep "^*.*hard.*nofile" /etc/security/limits.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+hard[[:space:]]+nofile" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* hard nofile 655350" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *hard *nofile.*/* hard nofile 655350/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+hard[[:space:]]\+nofile\b.*/\* hard nofile 655350/" /etc/security/limits.conf'
     fi
 
-    if [[ -z $(sshcheck "$host" 'grep "^*.*soft.*stack" /etc/security/limits.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+soft[[:space:]]+stack" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* soft stack unlimited" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *soft *stack.*/* soft stack unlimited/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+soft[[:space:]]\+stack\b.*/\* soft stack unlimited/" /etc/security/limits.conf'
     fi
 
-    if [[ -z $(sshcheck "$host" 'grep "^*.*hard.*stack" /etc/security/limits.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+hard[[:space:]]+stack" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* hard stack unlimited" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *hard *stack.*/* hard stack unlimited/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+hard[[:space:]]\+stack\b.*/\* hard stack unlimited/" /etc/security/limits.conf'
     fi
 
-    if [[ -z $(sshcheck "$host" 'grep "^*.*soft.*memlock" /etc/security/limits.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+soft[[:space:]]+memlock" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* soft memlock unlimited" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *soft *memlock.*/* soft memlock unlimited/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+soft[[:space:]]\+memlock\b.*/\* soft memlock unlimited/" /etc/security/limits.conf'
     fi
 
-    if [[ -z $(sshcheck "$host" 'grep "^*.*hard.*memlock" /etc/security/limits.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+hard[[:space:]]+memlock" /etc/security/limits.conf') ]]; then
         sshUpdate "$host" 'echo "* hard memlock unlimited" >> /etc/security/limits.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *hard *memlock.*/* hard memlock unlimited/" /etc/security/limits.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+hard[[:space:]]\+memlock\b.*/\* hard memlock unlimited/" /etc/security/limits.conf'
     fi
 
     # 配置文件/etc/security/limits.d/20-nproc.conf， 设置soft nproc参数
-    if [[ -z $(sshcheck "$host" 'grep "^*.*soft.*proc" /etc/security/limits.d/20-nproc.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^\*[[:space:]]+soft[[:space:]]+nproc" /etc/security/limits.d/20-nproc.conf') ]]; then
         sshUpdate "$host" 'echo "* soft nproc 65535" >> /etc/security/limits.d/20-nproc.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^* *soft *nproc.*/* soft nproc 65535/" /etc/security/limits.d/20-nproc.conf'
+        sshUpdate "$host" 'sed -i "s/^\*[[:space:]]\+soft[[:space:]]\+nproc\b.*/\* soft nproc 65535/" /etc/security/limits.d/20-nproc.conf'
     fi
 
-    # 配置文件/etc/security/limits.d/20-nproc.conf， 设置soft nproc参数
-    if [[ -z $(sshcheck "$host" 'grep "^root.*soft.*proc" /etc/security/limits.d/20-nproc.conf') ]]; then
+    if [[ -z $(sshcheck "$host" 'grep -P "^root[[:space:]]+soft[[:space:]]+nproc" /etc/security/limits.d/20-nproc.conf') ]]; then
         sshUpdate "$host" 'echo "root soft nproc 65535" >> /etc/security/limits.d/20-nproc.conf'
     else
-        sshUpdate "$host" 'sed -i "s/^root *soft *nproc.*/root soft nproc 65535/" /etc/security/limits.d/20-nproc.conf'
+        sshUpdate "$host" 'sed -i "s/^root[[:space:]]\+soft[[:space:]]\+nproc\b.*/root soft nproc 65535/" /etc/security/limits.d/20-nproc.conf'
     fi
 
     echo -e "ulimit -u:"$(sshcheck "$host" 'ulimit -u')
