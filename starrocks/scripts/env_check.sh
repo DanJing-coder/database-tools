@@ -152,10 +152,10 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -*)
-            shift
+            break
             ;;
         *)
-            shift
+            break
             ;;
     esac
 done
